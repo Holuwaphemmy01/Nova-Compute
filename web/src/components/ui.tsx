@@ -46,7 +46,7 @@ export function Segmented<T extends string>({
 }: {
   label: string;
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; disabled?: boolean }[];
   onChange: (v: T) => void;
   size?: "sm" | "md" | "lg";
   stretch?: boolean;
@@ -63,8 +63,11 @@ export function Segmented<T extends string>({
             type="button"
             className="seg"
             aria-pressed={on}
+            disabled={o.disabled}
             onClick={() => onChange(o.value)}
             style={{
+              cursor: o.disabled ? "not-allowed" : undefined,
+              opacity: o.disabled ? 0.55 : undefined,
               flex: stretch ? 1 : undefined,
               minHeight: h,
               padding: stretch ? "0 12px" : "0 16px",
