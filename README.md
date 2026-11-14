@@ -9,7 +9,9 @@
 > | Slides | [Widget Factory slides] |
 > | Live demo | [Live demo] |
 > | Nov 14 baseline demo | [Nov 14 baseline demo] |
-> | Nov 14 baseline code | [Nov 14 baseline code: tag blaze-start] |
+> | Nov 14 baseline code | [tree/blaze-start](https://github.com/Holuwaphemmy01/nova-compute/tree/blaze-start) |
+> | Nov 14 baseline designs | [tree/blaze-start/design](https://github.com/Holuwaphemmy01/nova-compute/tree/blaze-start/design) |
+> | Baseline details | [docs/baseline.md](docs/baseline.md) |
 > | CashTokens address | [EMBER2026 CashTokens address] |
 
 ## The problem
