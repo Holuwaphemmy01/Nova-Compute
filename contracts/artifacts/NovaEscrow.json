@@ -1,0 +1,68 @@
+{
+  "contractName": "NovaEscrow",
+  "constructorInputs": [
+    { "name": "researcherPkh", "type": "bytes20" },
+    { "name": "oraclePk", "type": "pubkey" },
+    { "name": "jobId", "type": "bytes32" },
+    { "name": "pricePerWorker", "type": "int" },
+    { "name": "refundAfter", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "payout",
+      "inputs": [
+        { "name": "attestation", "type": "datasig" },
+        { "name": "workerA", "type": "bytes20" },
+        { "name": "workerB", "type": "bytes20" },
+        { "name": "resultHash", "type": "bytes32" }
+      ]
+    },
+    {
+      "name": "close",
+      "inputs": [
+        { "name": "pk", "type": "pubkey" },
+        { "name": "s", "type": "sig" },
+        { "name": "oracleClose", "type": "datasig" }
+      ]
+    },
+    {
+      "name": "refund",
+      "inputs": [
+        { "name": "pk", "type": "pubkey" },
+        { "name": "s", "type": "sig" }
+      ]
+    }
+  ],
+  "bytecode": "OP_5 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_SIZE 14 OP_EQUALVERIFY OP_8 OP_ROLL OP_SIZE 14 OP_EQUALVERIFY OP_9 OP_ROLL OP_SIZE 20 OP_EQUALVERIFY OP_2 OP_PICK OP_2 OP_PICK OP_EQUAL OP_NOT OP_VERIFY OP_INPUTINDEX OP_DUP OP_OUTPOINTTXHASH OP_OVER OP_OUTPOINTINDEX OP_4 OP_NUM2BIN OP_CAT OP_11 OP_ROLL OP_8 OP_ROLL OP_ROT OP_CAT OP_5 OP_PICK OP_CAT OP_4 OP_PICK OP_CAT OP_3 OP_ROLL OP_CAT OP_6 OP_ROLL OP_CHECKDATASIGVERIFY OP_2 OP_MUL OP_DUP OP_OUTPUTBYTECODE 76a914 OP_4 OP_ROLL OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE OP_4 OP_PICK OP_GREATERTHANOREQUAL OP_VERIFY OP_DUP OP_1ADD OP_OUTPUTBYTECODE 76a914 OP_3 OP_ROLL OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_1ADD OP_OUTPUTVALUE OP_ROT OP_GREATERTHANOREQUAL OP_NIP OP_NIP OP_NIP OP_ELSE OP_5 OP_PICK OP_1 OP_NUMEQUAL OP_IF OP_6 OP_PICK OP_HASH160 OP_EQUALVERIFY OP_6 OP_ROLL OP_6 OP_ROLL OP_CHECKSIGVERIFY OP_5 OP_ROLL OP_ROT 636c6f7365 OP_CAT OP_ROT OP_CHECKDATASIG OP_NIP OP_NIP OP_NIP OP_ELSE OP_5 OP_ROLL OP_2 OP_NUMEQUALVERIFY OP_5 OP_PICK OP_HASH160 OP_EQUALVERIFY OP_2ROT OP_CHECKSIGVERIFY OP_3 OP_ROLL OP_CHECKLOCKTIMEVERIFY OP_2DROP OP_2DROP OP_1 OP_ENDIF OP_ENDIF",
+  "source": "pragma cashscript ^0.14.0;\n\n/*\n * NovaEscrow: one UTXO per chunk of a Nova Compute job.\n *\n * payout  - anyone holding the oracle's attestation for THIS UTXO pays both workers.\n *           The attestation commits to this input's outpoint, so it can't be replayed\n *           on another chunk; whatever is left of the input is the miner fee.\n * close   - researcher + oracle \"close\" signature sweep unused chunks back.\n * refund  - researcher alone, once refundAfter has passed (oracle unavailable).\n *\n * Attestation message (140 bytes), signed with checkDataSig (Schnorr over sha256(msg)):\n *   jobId(32) ‖ outpointTxHash(32) ‖ outpointIndex(4 LE) ‖ workerA(20) ‖ workerB(20) ‖ resultHash(32)\n */\ncontract NovaEscrow(\n    bytes20 researcherPkh,\n    pubkey oraclePk,\n    bytes32 jobId,\n    int pricePerWorker,\n    int refundAfter\n) {\n    function payout(datasig attestation, bytes20 workerA, bytes20 workerB, bytes32 resultHash) {\n        require(workerA != workerB, \"workers must differ\");\n\n        int i = this.activeInputIndex;\n        bytes outpoint = tx.inputs[i].outpointTransactionHash + toPaddedBytes(tx.inputs[i].outpointIndex, 4);\n        require(checkDataSig(attestation, jobId + outpoint + workerA + workerB + resultHash, oraclePk), \"bad attestation\");\n\n        // Each chunk input pays the output pair at its own position (2i, 2i+1), so several\n        // chunks can be paid in one transaction without sharing (double-counting) outputs.\n        // For the usual single-input payout this is outputs 0 and 1.\n        int a = i * 2;\n        require(tx.outputs[a].lockingBytecode == new LockingBytecodeP2PKH(workerA), \"output A must pay workerA\");\n        require(tx.outputs[a].value >= pricePerWorker, \"output A below price\");\n        require(tx.outputs[a + 1].lockingBytecode == new LockingBytecodeP2PKH(workerB), \"output B must pay workerB\");\n        require(tx.outputs[a + 1].value >= pricePerWorker, \"output B below price\");\n    }\n\n    function close(pubkey pk, sig s, datasig oracleClose) {\n        require(hash160(pk) == researcherPkh, \"not the researcher\");\n        require(checkSig(s, pk), \"bad researcher signature\");\n        require(checkDataSig(oracleClose, jobId + 0x636c6f7365, oraclePk), \"bad oracle close signature\"); // \"close\"\n    }\n\n    function refund(pubkey pk, sig s) {\n        require(hash160(pk) == researcherPkh, \"not the researcher\");\n        require(checkSig(s, pk), \"bad researcher signature\");\n        require(tx.time >= refundAfter, \"refund not yet available\");\n    }\n}\n",
+  "fingerprint": "f44993b77e278248241dd7139a921947e02e4dc34fbe433c68a6cf6e0c3f47d7",
+  "debug": {
+    "bytecode": "5579009c63577a82011488587a82011488597a8201208852795279879169c076c878c954807e5b7a587a7b7e55797e54797e537a7e567abb529576cd0376a914547a7e0288ac7e8876cc5479a269768bcd0376a914537a7e0288ac7e888bcc7ba2777777675579519c635679a988567a567aad557a7b05636c6f73657e7bba77777767557a529d5579a98871ad537ab16d6d516868",
+    "sourceMap": "22:4:37:5;;;;;:41:22:56;;;;;:58::73;;;;;:75::93;;;;;23:16:23:23;;:27::34;;:16:::1;;:8::59;25:16:25:37:0;26:35:26:36;:25::61:1;:88::89:0;:78::104:1;:106::107:0;:64::108:1;:25;27:29:27:40:0;;:42::47;;:50::58;:42:::1;:61::68:0;;:42:::1;:71::78:0;;:42:::1;:81::91:0;;:42:::1;:93::101:0;;:8::123:1;32:20:32:21:0;:16:::1;33:27:33:28:0;:16::45:1;:49::82:0;:74::81;;:49::82:1;;;:8::113;34:27:34:28:0;:16::35:1;:39::53:0;;:16:::1;:8::79;35:27:35:28:0;:::32:1;:16::49;:53::86:0;:78::85;;:53::86:1;;;:8::117;36:27:36:32;:16::39;:43::57:0;:8::83:1;22:95:37:5;;;:4;39::43::0;;;;;40:24:40:26;;:16::27:1;:8::68;41:25:41:26:0;;:28::30;;:8::61:1;42:29:42:40:0;;:42::47;:50::62;:42:::1;:64::72:0;:8::105:1;39:58:43:5;;;:4;45::49::0;;;;46:24:46:26;;:16::27:1;:8::68;47:25:47:30:0;:8::61:1;48:27:48:38:0;;:8::68:1;45:38:49:5;;;15:0:50:1;",
+    "logs": [],
+    "requires": [
+      { "ip": 31, "line": 23, "message": "workers must differ" },
+      { "ip": 57, "line": 27, "message": "bad attestation" },
+      { "ip": 68, "line": 33, "message": "output A must pay workerA" },
+      { "ip": 74, "line": 34, "message": "output A below price" },
+      { "ip": 84, "line": 35, "message": "output B must pay workerB" },
+      { "ip": 89, "line": 36, "message": "output B below price" },
+      { "ip": 101, "line": 40, "message": "not the researcher" },
+      { "ip": 106, "line": 41, "message": "bad researcher signature" },
+      { "ip": 114, "line": 42, "message": "bad oracle close signature" },
+      { "ip": 125, "line": 46, "message": "not the researcher" },
+      { "ip": 127, "line": 47, "message": "bad researcher signature" },
+      { "ip": 130, "line": 48, "message": "refund not yet available" }
+    ],
+    "sourceTags": "5:9:pv;10:14:pv;15:19:pv;84:86:sc;109:111:sc"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.14.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-11-16T22:30:14.356Z"
+}

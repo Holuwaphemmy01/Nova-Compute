@@ -1,0 +1,50 @@
+pragma cashscript ^0.14.0;
+
+/*
+ * NovaEscrow: one UTXO per chunk of a Nova Compute job.
+ *
+ * payout  - anyone holding the oracle's attestation for THIS UTXO pays both workers.
+ *           The attestation commits to this input's outpoint, so it can't be replayed
+ *           on another chunk; whatever is left of the input is the miner fee.
+ * close   - researcher + oracle "close" signature sweep unused chunks back.
+ * refund  - researcher alone, once refundAfter has passed (oracle unavailable).
+ *
+ * Attestation message (140 bytes), signed with checkDataSig (Schnorr over sha256(msg)):
+ *   jobId(32) ‖ outpointTxHash(32) ‖ outpointIndex(4 LE) ‖ workerA(20) ‖ workerB(20) ‖ resultHash(32)
+ */
+contract NovaEscrow(
+    bytes20 researcherPkh,
+    pubkey oraclePk,
+    bytes32 jobId,
+    int pricePerWorker,
+    int refundAfter
+) {
+    function payout(datasig attestation, bytes20 workerA, bytes20 workerB, bytes32 resultHash) {
+        require(workerA != workerB, "workers must differ");
+
+        int i = this.activeInputIndex;
+        bytes outpoint = tx.inputs[i].outpointTransactionHash + toPaddedBytes(tx.inputs[i].outpointIndex, 4);
+        require(checkDataSig(attestation, jobId + outpoint + workerA + workerB + resultHash, oraclePk), "bad attestation");
+
+        // Each chunk input pays the output pair at its own position (2i, 2i+1), so several
+        // chunks can be paid in one transaction without sharing (double-counting) outputs.
+        // For the usual single-input payout this is outputs 0 and 1.
+        int a = i * 2;
+        require(tx.outputs[a].lockingBytecode == new LockingBytecodeP2PKH(workerA), "output A must pay workerA");
+        require(tx.outputs[a].value >= pricePerWorker, "output A below price");
+        require(tx.outputs[a + 1].lockingBytecode == new LockingBytecodeP2PKH(workerB), "output B must pay workerB");
+        require(tx.outputs[a + 1].value >= pricePerWorker, "output B below price");
+    }
+
+    function close(pubkey pk, sig s, datasig oracleClose) {
+        require(hash160(pk) == researcherPkh, "not the researcher");
+        require(checkSig(s, pk), "bad researcher signature");
+        require(checkDataSig(oracleClose, jobId + 0x636c6f7365, oraclePk), "bad oracle close signature"); // "close"
+    }
+
+    function refund(pubkey pk, sig s) {
+        require(hash160(pk) == researcherPkh, "not the researcher");
+        require(checkSig(s, pk), "bad researcher signature");
+        require(tx.time >= refundAfter, "refund not yet available");
+    }
+}
