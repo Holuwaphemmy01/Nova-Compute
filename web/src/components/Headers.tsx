@@ -1,6 +1,7 @@
 import { Link, NavLink } from "react-router-dom";
 import { Logo } from "./ui";
-import { DEMO } from "../lib/demo";
+import { shortAddress } from "../config/env";
+import { useWalletState } from "../wallet/store";
 
 const wrap = (max: number) => ({
   maxWidth: max,
@@ -69,7 +70,7 @@ type Role = "researcher" | "provider";
 const NAV: Record<Role, { to: string; label: string }[]> = {
   researcher: [
     { to: "/jobs", label: "My jobs" },
-    { to: "/results", label: "Results" },
+    { to: "/jobs/new", label: "New job" },
   ],
   provider: [
     { to: "/provider", label: "Set up" },
@@ -80,25 +81,35 @@ const NAV: Record<Role, { to: string; label: string }[]> = {
 
 /** Signed-in app header: researcher or provider tabs plus the wallet chip. */
 export function AppHeader({ role }: { role: Role }) {
-  const address = role === "researcher" ? DEMO.researcherAddress : DEMO.providerAddress;
+  const wallet = useWalletState();
   return (
     <header style={wrap(1000)}>
       <Brand />
       <nav aria-label={role === "researcher" ? "Researcher" : "Provider"} style={{ display: "flex", gap: 22, fontSize: 15, flexWrap: "wrap" }}>
         {NAV[role].map((n) => (
-          // "end" keeps /jobs from staying active on /jobs/new; /provider likewise.
-          <NavLink key={n.to} to={n.to} end={n.to !== "/jobs"} className="tab" style={tabStyle}>
+          // "end": exact match, so "My jobs" isn't also active on /jobs/new; /provider likewise.
+          <NavLink key={n.to} to={n.to} end className="tab" style={tabStyle}>
             {n.label}
           </NavLink>
         ))}
       </nav>
-      <span
-        className="mono"
-        title="Connected wallet"
-        style={{ marginLeft: "auto", padding: "8px 14px", borderRadius: 999, background: "var(--surface-2)", fontSize: 12, color: "var(--muted)" }}
-      >
-        {address}
-      </span>
+      {wallet.address ? (
+        <Link
+          to={`/connect?role=${role}`}
+          className="mono"
+          title={`Connected wallet: ${wallet.address}`}
+          style={{ marginLeft: "auto", padding: "8px 14px", borderRadius: 999, background: "var(--surface-2)", fontSize: 12, color: "var(--muted)", textDecoration: "none" }}
+        >
+          {shortAddress(wallet.address)}
+        </Link>
+      ) : (
+        <Link
+          to={`/connect?role=${role}`}
+          style={{ marginLeft: "auto", padding: "8px 14px", borderRadius: 999, background: "var(--ink)", fontSize: 13, fontWeight: 600, color: "#FFFFFF", textDecoration: "none" }}
+        >
+          {wallet.status === "connecting" ? "Connecting…" : "Connect wallet"}
+        </Link>
+      )}
     </header>
   );
 }

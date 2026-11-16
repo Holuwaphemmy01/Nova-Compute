@@ -2,16 +2,17 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AppHeader } from "../components/Headers";
 import { CheckIcon, SliderLabel, Spinner } from "../components/ui";
-import { DEMO } from "../lib/demo";
+import { useWalletState } from "../wallet/store";
 import { fmt } from "../lib/random";
 import { useInterval } from "../lib/useInterval";
 
 // TODO(kernel): real checks — navigator.gpu, a known-answer test chunk, wallet address.
-const CHECKS = ["Your browser supports WebGPU", "Your GPU gives the same answer as ours", `Payouts go to ${DEMO.providerAddress}`];
+const CHECKS = ["Your browser supports WebGPU", "Your GPU gives the same answer as ours", "Payouts go to your connected wallet"];
 
 export default function ProviderSetup() {
   const [stage, setStage] = useState(0);
   const [limit, setLimit] = useState(60);
+  useWalletState();
   const ready = stage >= CHECKS.length;
   useInterval(() => setStage((s) => Math.min(CHECKS.length, s + 1)), ready ? null : 750);
 
@@ -44,7 +45,7 @@ export default function ProviderSetup() {
 
         <div className="in d1" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h1 style={{ margin: 0, fontSize: 40, fontWeight: 700, letterSpacing: "-0.04em" }}>Put your GPU to work</h1>
-          <p style={{ margin: 0, fontSize: 17, color: "var(--muted)" }}>Runs safely in this tab. Earn {fmt(DEMO.satsPerPiece)} sats for every piece you finish.</p>
+          <p style={{ margin: 0, fontSize: 17, color: "var(--muted)" }}>Runs safely in this tab. Earn {fmt(1200)} sats for every piece you finish.</p>
         </div>
 
         <ul className="in d2" aria-label="Setup checks" style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, textAlign: "left", listStyle: "none", margin: 0, padding: 0 }}>

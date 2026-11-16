@@ -1,30 +1,52 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Link } from "react-router-dom";
+import { useState, type CSSProperties } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { api, humanError } from "../api/client";
 import { AppHeader } from "../components/Headers";
+import { Notice } from "../components/Notice";
 import { Chips, SliderLabel, Spinner, btnPrimary } from "../components/ui";
-import { DEMO } from "../lib/demo";
+import { chunkValue } from "../config/env";
 import { fmt } from "../lib/random";
+import { usePoll } from "../lib/usePoll";
+import { FundPanel } from "../wallet/FundPanel";
+import { useWalletState } from "../wallet/store";
 
-type Phase = "idle" | "funding" | "funded";
+const PARTICLES_PER_PIECE = 10_000;
+const PRICE = 1200; // sats per worker per piece
 
 export default function NewJob() {
+  const wallet = useWalletState();
+  const navigate = useNavigate();
   const [thickness, setThickness] = useState(10);
   const [particles, setParticles] = useState(2_000_000);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const job = usePoll((s) => api.getJob(jobId!, s), 3000, [jobId], !!jobId);
 
-  const chunks = Math.ceil(particles / DEMO.particlesPerPiece);
-  const total = chunks * 2 * DEMO.satsPerPiece;
+  const chunks = Math.ceil(particles / PARTICLES_PER_PIECE);
+  const perChunk = chunkValue(PRICE);
+  const total = chunks * perChunk;
   const wallW = 20 + thickness * 12;
-
-  function fund() {
-    // TODO(wallet+api): POST /jobs, then sign the escrow funding tx via WizardConnect.
-    setPhase("funding");
-    timer.current = setTimeout(() => setPhase("funded"), 1900);
-  }
-
   const zip = (d: number, delay = 0): CSSProperties => ({ ["--d" as string]: `${d}px`, animationDelay: `${delay}s` });
+
+  async function create() {
+    if (!wallet.address) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await api.createJob(wallet.address, {
+        params: { thickness_cm: thickness, mfp_cm: 3, absorb_prob: 0.18 },
+        chunk_count: chunks,
+        trials_per_chunk: PARTICLES_PER_PIECE,
+        price_per_worker: PRICE,
+      });
+      setJobId(created.job_id);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -54,7 +76,7 @@ export default function NewJob() {
         <section className="in d2" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <SliderLabel label="Wall thickness" value={`${thickness} cm`} size={16} />
-            <input type="range" min={1} max={20} step={1} value={thickness} disabled={phase !== "idle"} onChange={(e) => setThickness(Number(e.target.value))} />
+            <input type="range" min={1} max={20} step={1} value={thickness} disabled={!!jobId} onChange={(e) => setThickness(Number(e.target.value))} />
           </label>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -63,8 +85,9 @@ export default function NewJob() {
               label="Particles"
               size="lg"
               value={particles}
-              onChange={(v) => phase === "idle" && setParticles(v)}
+              onChange={(v) => !jobId && setParticles(v)}
               options={[
+                { value: 40_000, label: "40k" },
                 { value: 500_000, label: "500k" },
                 { value: 2_000_000, label: "2 million" },
                 { value: 5_000_000, label: "5 million" },
@@ -75,7 +98,7 @@ export default function NewJob() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 22, borderRadius: 20, border: "1px solid var(--line)" }}>
             <span style={{ fontSize: 15, color: "var(--muted)" }}>
-              {fmt(chunks)} pieces × 2 providers × {fmt(DEMO.satsPerPiece)} sats
+              {fmt(chunks)} pieces × 2 providers × {fmt(PRICE)} sats, plus {fmt(perChunk - 2 * PRICE)} sats network fee per piece
             </span>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
               <span style={{ fontSize: 16, fontWeight: 600 }}>Total</span>
@@ -86,31 +109,28 @@ export default function NewJob() {
             <span style={{ fontSize: 13, color: "var(--faint)" }}>Anything unused comes back to your wallet.</span>
           </div>
 
-          {phase === "idle" && (
-            <button type="button" className="pri" onClick={fund} style={{ ...btnPrimary, minHeight: 58, fontSize: 17 }}>
-              Fund and start
+          {!wallet.address ? (
+            <Notice title="Connect your wallet to fund this job" action={{ to: "/connect?role=researcher", label: "Connect wallet" }}>
+              The escrow is funded from your wallet, and unused funds return to it.
+            </Notice>
+          ) : !jobId ? (
+            <button type="button" className="pri" onClick={create} disabled={creating} style={{ ...btnPrimary, minHeight: 58, fontSize: 17 }}>
+              {creating ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                  <Spinner /> Setting up the escrow…
+                </span>
+              ) : (
+                "Fund and start"
+              )}
             </button>
+          ) : job.data ? (
+            <FundPanel job={job.data} onFunded={() => navigate(`/jobs/${jobId}`)} />
+          ) : (
+            <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, color: "var(--muted)" }}>
+              <Spinner /> Preparing the escrow…
+            </span>
           )}
-          {phase === "funding" && (
-            <div className="swap-up" role="status" style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, color: "var(--muted)" }}>
-                <Spinner />
-                Confirm in your wallet…
-              </span>
-              <div style={{ width: "100%", height: 4, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
-                <div className="fill" style={{ height: "100%", background: "var(--ink)" }} />
-              </div>
-            </div>
-          )}
-          {phase === "funded" && (
-            <div className="swap-up" role="status" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "20px 22px", borderRadius: 20, background: "var(--mint)", flexWrap: "wrap" }}>
-              <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontWeight: 700, fontSize: 17 }}>Funded. It's running.</span>
-                <span className="mono" style={{ fontSize: 12, color: "var(--mint-ink)" }}>tx 3f9a…c21e · BCH mainnet</span>
-              </span>
-              <Link to="/jobs/live" className="pri" style={{ ...btnPrimary, minHeight: 48, padding: "0 22px" }}>Watch it →</Link>
-            </div>
-          )}
+          {error && <p role="alert" style={{ margin: 0, padding: "12px 16px", borderRadius: 14, background: "#FFF6E3", color: "#6B4700", fontSize: 14 }}>{error}</p>}
         </section>
       </main>
     </div>

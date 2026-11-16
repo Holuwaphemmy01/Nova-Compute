@@ -14,6 +14,13 @@ export const storage = {
       /* ignore */
     }
   },
+  remove(key: string) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  },
 };
 
 /** Copies text; uses the Clipboard API, falling back to a hidden textarea. */

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BareHeader } from "../components/Headers";
 import { CheckIcon, Segmented, Spinner, btnPrimary } from "../components/ui";
-import { DEMO } from "../lib/demo";
+import { useWalletState } from "../wallet/store";
 
 type Role = "researcher" | "provider";
 
@@ -29,6 +29,7 @@ export default function Connect() {
   const [params] = useSearchParams();
   const [role, setRole] = useState<Role>(params.get("role") === "provider" ? "provider" : "researcher");
   const [connected, setConnected] = useState(false);
+  const wallet = useWalletState();
   const qr = useQrCells();
 
   return (
@@ -94,7 +95,7 @@ export default function Connect() {
             </span>
             <span style={{ fontSize: 22, fontWeight: 700 }}>You're in</span>
             <span className="mono" style={{ fontSize: 13, color: "var(--muted)" }}>
-              {role === "researcher" ? DEMO.researcherAddressFull : `bitcoincash:${DEMO.providerAddress}`}
+              {wallet.address ?? "No wallet connected"}
             </span>
             <Link to={role === "researcher" ? "/jobs" : "/provider"} className="pri" style={{ ...btnPrimary, width: "100%", minHeight: 54, marginTop: 8, fontSize: 16 }}>
               {role === "researcher" ? "Go to my jobs" : "Set up my GPU"}
