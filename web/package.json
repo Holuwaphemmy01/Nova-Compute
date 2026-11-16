@@ -12,6 +12,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@bch-wc2/interfaces": "0.0.8",
+    "@bitauth/libauth": "3.0.0",
+    "@wizardconnect/core": "^0.2.10",
+    "@wizardconnect/dapp": "^0.2.7",
+    "@wizardconnect/react": "^0.2.6",
+    "cashscript": "0.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5"

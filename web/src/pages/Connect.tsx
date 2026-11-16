@@ -1,36 +1,40 @@
-import { useMemo, useState } from "react";
+import { AlphanumericQRCode } from "@wizardconnect/react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BareHeader } from "../components/Headers";
-import { CheckIcon, Segmented, Spinner, btnPrimary } from "../components/ui";
-import { useWalletState } from "../wallet/store";
+import { CheckIcon, Segmented, Spinner, btnPrimary, btnSecondary } from "../components/ui";
+import { copyText } from "../lib/browser";
+import { NetworkBanner } from "../wallet/NetworkBanner";
+import { useWallet } from "../wallet/wizard";
 
 type Role = "researcher" | "provider";
-
-/** Placeholder 21×21 QR-like grid with three finder patterns.
- *  Replaced by the real WizardConnect pairing URI once the wallet is wired up. */
-function useQrCells() {
-  return useMemo(() => {
-    const finder = (x: number, y: number) => {
-      const f = (ox: number, oy: number) => {
-        const dx = x - ox, dy = y - oy;
-        if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return null;
-        return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx > 1 && dx < 5 && dy > 1 && dy < 5);
-      };
-      return f(0, 0) ?? f(14, 0) ?? f(0, 14);
-    };
-    const cells: boolean[] = [];
-    for (let y = 0; y < 21; y++)
-      for (let x = 0; x < 21; x++) cells.push(finder(x, y) ?? (x * 7 + y * 13 + x * y) % 5 < 2);
-    return cells;
-  }, []);
-}
 
 export default function Connect() {
   const [params] = useSearchParams();
   const [role, setRole] = useState<Role>(params.get("role") === "provider" ? "provider" : "researcher");
-  const [connected, setConnected] = useState(false);
-  const wallet = useWalletState();
-  const qr = useQrCells();
+  const wallet = useWallet();
+  const [copied, setCopied] = useState(false);
+  const started = useRef(false);
+
+  // Start pairing as soon as the page opens (unless a stored session is reconnecting).
+  useEffect(() => {
+    if (!started.current && (wallet.wcState === "idle" || wallet.wcState === "disconnected")) {
+      started.current = true;
+      wallet.connect();
+    }
+  }, [wallet]);
+
+  async function copy() {
+    if (wallet.uri && (await copyText(wallet.uri))) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  }
+
+  async function disconnect() {
+    await wallet.disconnect();
+    started.current = false; // a fresh pairing code is shown
+  }
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -53,7 +57,7 @@ export default function Connect() {
         </div>
 
         <div className="in" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <h1 style={{ margin: 0, fontSize: 40, fontWeight: 700, letterSpacing: "-0.04em" }}>Connect your wallet</h1>
+          <h1 style={{ margin: 0, fontSize: 40, fontWeight: 700, letterSpacing: "-0.04em" }}>{wallet.connected ? "Wallet connected" : "Connect your wallet"}</h1>
           <p style={{ margin: 0, fontSize: 17, color: "var(--muted)" }}>Pick a role, then approve with WizardConnect.</p>
         </div>
 
@@ -70,37 +74,49 @@ export default function Connect() {
           />
         </div>
 
-        {!connected ? (
-          <div className="in d1" style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
-            <div role="img" aria-label="WizardConnect pairing QR code" style={{ width: 210, height: 210, padding: 14, borderRadius: 24, background: "#FFFFFF", border: "1px solid var(--line)" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(21, minmax(0, 1fr))", width: "100%", height: "100%" }}>
-                {qr.map((dark, i) => (
-                  <span key={i} style={{ display: "block", aspectRatio: "1", borderRadius: 1, background: dark ? "#16161A" : "transparent" }} />
-                ))}
-              </div>
-            </div>
-            <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--muted)" }}>
-              <Spinner size={12} />
-              Scan with your BCH wallet
-            </span>
-            {/* TODO(wallet): replace with the WizardConnect session approval. */}
-            <button type="button" className="pri" onClick={() => setConnected(true)} style={{ ...btnPrimary, width: "100%", minHeight: 54, fontSize: 16 }}>
-              Approve in wallet
-            </button>
-          </div>
-        ) : (
+        {wallet.connected ? (
           <div className="swap" style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }} role="status">
             <span style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <CheckIcon size={28} width={2.4} animate />
             </span>
-            <span style={{ fontSize: 22, fontWeight: 700 }}>You're in</span>
-            <span className="mono" style={{ fontSize: 13, color: "var(--muted)" }}>
-              {wallet.address ?? "No wallet connected"}
-            </span>
+            <span style={{ fontSize: 22, fontWeight: 700 }}>You're in{wallet.walletName ? ` with ${wallet.walletName}` : ""}</span>
+            <span className="mono" style={{ fontSize: 13, color: "var(--muted)", wordBreak: "break-all" }}>{wallet.address}</span>
+            <NetworkBanner />
             <Link to={role === "researcher" ? "/jobs" : "/provider"} className="pri" style={{ ...btnPrimary, width: "100%", minHeight: 54, marginTop: 8, fontSize: 16 }}>
               {role === "researcher" ? "Go to my jobs" : "Set up my GPU"}
             </Link>
+            <button type="button" className="sec" onClick={disconnect} style={{ ...btnSecondary, minHeight: 46, padding: "0 20px", fontSize: 14 }}>
+              Disconnect
+            </button>
           </div>
+        ) : wallet.qrUri && wallet.uri ? (
+          <div className="in d1" style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+            <div role="img" aria-label="WizardConnect pairing QR code" style={{ width: 210, height: 210, padding: 14, borderRadius: 24, background: "#FFFFFF", border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <AlphanumericQRCode value={wallet.qrUri} size={180} foreground="#16161A" background="#FFFFFF" quietZone={0} />
+            </div>
+            <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--muted)" }}>
+              <Spinner size={12} />
+              Scan with a WizardConnect wallet (e.g. Paytaca)
+            </span>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", width: "100%" }}>
+              <a href={wallet.uri} className="pri" style={{ ...btnPrimary, flex: "1 1 200px", minHeight: 54, fontSize: 16 }}>
+                Open in wallet app
+              </a>
+              <button type="button" className="sec" onClick={copy} aria-label="Copy pairing link" style={{ ...btnSecondary, flex: "0 1 auto", minHeight: 54, padding: "0 20px" }}>
+                <span aria-live="polite">{copied ? "Copied" : "Copy link"}</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <span role="status" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, color: "var(--muted)", minHeight: 60 }}>
+            <Spinner /> {wallet.wcState === "reconnecting" || wallet.wcState === "connecting" ? "Reconnecting to your wallet…" : "Preparing a pairing code…"}
+          </span>
+        )}
+
+        {wallet.connectError && (
+          <p role="alert" style={{ margin: 0, width: "100%", padding: "12px 16px", borderRadius: 14, background: "#FFF6E3", color: "#6B4700", fontSize: 14 }}>
+            Couldn't connect: {wallet.connectError}
+          </p>
         )}
         <p style={{ margin: 0, fontSize: 13, color: "var(--faint)" }}>Nova never holds your keys.</p>
       </main>
