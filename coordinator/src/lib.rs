@@ -5,3 +5,5 @@
 //!   against `contracts/vectors/payout.json`.
 
 pub mod chain;
+pub mod chain_client;
+pub mod fulcrum;
