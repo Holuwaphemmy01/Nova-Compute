@@ -1,0 +1,79 @@
+{
+  "description": "NovaEscrow.payout golden vector. FIXED TEST KEYS ONLY (private keys are sha256 of public labels); never use them for real funds.",
+  "deterministic": "Keys = sha256(label); input outpoint fixed; oracle datasig = BCH Schnorr over sha256(message) with libauth's deterministic RFC 6979-style nonce; payout has no tx signature, so the whole tx is reproducible. Regenerate with `pnpm vectors`; a test checks this file matches.",
+  "cashscript": {
+    "compiler": "0.14.0",
+    "contractType": "p2sh32"
+  },
+  "contract": {
+    "name": "NovaEscrow",
+    "params": {
+      "researcherPkh": "b00ac24dc695bfb214407355463ab3152de7e4a6",
+      "oraclePk": "0244c32b9f6866c72abde9620a946c23d0c1bc1a6bf1066655bf16ad45f280a3a1",
+      "jobId": "483893e424fa37bf2af56c930579ef1ee99aa8cca389b6ac760cb0bee95354e6",
+      "pricePerWorker": 1200,
+      "refundAfter": 1800000000
+    },
+    "encodedConstructorArgsHex": [
+      "b00ac24dc695bfb214407355463ab3152de7e4a6",
+      "0244c32b9f6866c72abde9620a946c23d0c1bc1a6bf1066655bf16ad45f280a3a1",
+      "483893e424fa37bf2af56c930579ef1ee99aa8cca389b6ac760cb0bee95354e6",
+      "b004",
+      "00d2496b"
+    ],
+    "redeemScriptHex": "0400d2496b02b00420483893e424fa37bf2af56c930579ef1ee99aa8cca389b6ac760cb0bee95354e6210244c32b9f6866c72abde9620a946c23d0c1bc1a6bf1066655bf16ad45f280a3a114b00ac24dc695bfb214407355463ab3152de7e4a65579009c63577a82011488587a82011488597a8201208852795279879169c076c878c954807e5b7a587a7b7e55797e54797e537a7e567abb529576cd0376a914547a7e0288ac7e8876cc5479a269768bcd0376a914537a7e0288ac7e888bcc7ba2777777675579519c635679a988567a567aad557a7b05636c6f73657e7bba77777767557a529d5579a98871ad537ab16d6d516868",
+    "redeemScriptBytes": 245,
+    "lockingBytecodeHex": "aa207403b9e6d04a092f77b5267f9c8d01e6243c8b754aa197a0707fbc6a2f77fbd387",
+    "lockingBytecodeNote": "P2SH32: OP_HASH256 <hash256(redeemScript)> OP_EQUAL",
+    "addressMainnet": "bitcoincash:pd6q8w0x6p9qjtmhk5n8l8ydq8nzg0ytw492r9aqwplmc630wlaaxx2txm5vn",
+    "addressChipnet": "bchtest:pd6q8w0x6p9qjtmhk5n8l8ydq8nzg0ytw492r9aqwplmc630wlaax9d6cr8ep"
+  },
+  "testKeys": {
+    "researcherPrivateKey": "306ae2deba9f1ac7dc6a682bcde3dbb97e3e8ea81267f45812cd2ac4e1b9f9e3",
+    "oraclePrivateKey": "b8902b85f419aa9176254f8c67cfff4a89a83ab77bc64941718e713bd42cd2f7",
+    "oraclePublicKey": "0244c32b9f6866c72abde9620a946c23d0c1bc1a6bf1066655bf16ad45f280a3a1",
+    "workerAPkh": "8ab9a76c22964c036ac55694a713c140ffa96baf",
+    "workerBPkh": "a6e7e715d9cfa80dd6b27bda7c9439e8e677235a"
+  },
+  "input": {
+    "txid": "7a6d3303b5460ff44e7bd0a4921266b8455506ab8c31a1cb744f96a55a3c20c0",
+    "vout": 3,
+    "outpointTxHashInternalHex": "c0203c5aa5964f74cba1318cab065545b8661292a4d07b4ef40f46b503336d7a",
+    "outpointIndexLeHex": "03000000",
+    "satoshis": 3000,
+    "sequence": 4294967294
+  },
+  "attestation": {
+    "layout": "jobId(32) ‖ outpointTxHash(32, internal byte order) ‖ outpointIndex(4, LE) ‖ workerA(20) ‖ workerB(20) ‖ resultHash(32)",
+    "resultHashHex": "720c00b946aea2017035693b73c6fcf516ac7bd6ec6b9081370186dc41794bbf",
+    "messageHex": "483893e424fa37bf2af56c930579ef1ee99aa8cca389b6ac760cb0bee95354e6c0203c5aa5964f74cba1318cab065545b8661292a4d07b4ef40f46b503336d7a030000008ab9a76c22964c036ac55694a713c140ffa96bafa6e7e715d9cfa80dd6b27bda7c9439e8e677235a720c00b946aea2017035693b73c6fcf516ac7bd6ec6b9081370186dc41794bbf",
+    "messageBytes": 140,
+    "messageSha256Hex": "e79bb6bcd7b7657495efec290671d254140360ab53b8526e49f2164eb8623078",
+    "signatureHex": "d6712def181565ed65a0c9a4aaf239b040cf6dd5113eaff4a7cf27ed8677b353a31a5a9069b1dffa6dab00a4dc6bfa53551c988be148ea897b2e9456fd424412"
+  },
+  "unlockingBytecodeHex": "20720c00b946aea2017035693b73c6fcf516ac7bd6ec6b9081370186dc41794bbf14a6e7e715d9cfa80dd6b27bda7c9439e8e677235a148ab9a76c22964c036ac55694a713c140ffa96baf40d6712def181565ed65a0c9a4aaf239b040cf6dd5113eaff4a7cf27ed8677b353a31a5a9069b1dffa6dab00a4dc6bfa53551c988be148ea897b2e9456fd424412004cf50400d2496b02b00420483893e424fa37bf2af56c930579ef1ee99aa8cca389b6ac760cb0bee95354e6210244c32b9f6866c72abde9620a946c23d0c1bc1a6bf1066655bf16ad45f280a3a114b00ac24dc695bfb214407355463ab3152de7e4a65579009c63577a82011488587a82011488597a8201208852795279879169c076c878c954807e5b7a587a7b7e55797e54797e537a7e567abb529576cd0376a914547a7e0288ac7e8876cc5479a269768bcd0376a914537a7e0288ac7e888bcc7ba2777777675579519c635679a988567a567aad557a7b05636c6f73657e7bba77777767557a529d5579a98871ad537ab16d6d516868",
+  "unlockingBytecodeNote": "Pushes, in order: resultHash, workerB, workerA, attestation (function args in reverse), OP_0 (function selector: payout = 0), then the redeem script.",
+  "tx": {
+    "hex": "0200000001c0203c5aa5964f74cba1318cab065545b8661292a4d07b4ef40f46b503336d7a03000000fd840120720c00b946aea2017035693b73c6fcf516ac7bd6ec6b9081370186dc41794bbf14a6e7e715d9cfa80dd6b27bda7c9439e8e677235a148ab9a76c22964c036ac55694a713c140ffa96baf40d6712def181565ed65a0c9a4aaf239b040cf6dd5113eaff4a7cf27ed8677b353a31a5a9069b1dffa6dab00a4dc6bfa53551c988be148ea897b2e9456fd424412004cf50400d2496b02b00420483893e424fa37bf2af56c930579ef1ee99aa8cca389b6ac760cb0bee95354e6210244c32b9f6866c72abde9620a946c23d0c1bc1a6bf1066655bf16ad45f280a3a114b00ac24dc695bfb214407355463ab3152de7e4a65579009c63577a82011488587a82011488597a8201208852795279879169c076c878c954807e5b7a587a7b7e55797e54797e537a7e567abb529576cd0376a914547a7e0288ac7e8876cc5479a269768bcd0376a914537a7e0288ac7e888bcc7ba2777777675579519c635679a988567a567aad557a7b05636c6f73657e7bba77777767557a529d5579a98871ad537ab16d6d516868feffffff02b0040000000000001976a9148ab9a76c22964c036ac55694a713c140ffa96baf88acb0040000000000001976a914a6e7e715d9cfa80dd6b27bda7c9439e8e677235a88ac00000000",
+    "txid": "d00c08ff7b3f5a52df6f354dc9b106d0ea9c611ede7b185aea2abed4dfd2e446",
+    "bytes": 509,
+    "version": 2,
+    "locktime": 0,
+    "feeSatoshis": 600,
+    "feeMarginSatoshis": 600,
+    "outputs": [
+      {
+        "lockingBytecodeHex": "76a9148ab9a76c22964c036ac55694a713c140ffa96baf88ac",
+        "satoshis": 1200
+      },
+      {
+        "lockingBytecodeHex": "76a914a6e7e715d9cfa80dd6b27bda7c9439e8e677235a88ac",
+        "satoshis": 1200
+      }
+    ],
+    "expectedOutputLockingBytecodes": [
+      "76a9148ab9a76c22964c036ac55694a713c140ffa96baf88ac",
+      "76a914a6e7e715d9cfa80dd6b27bda7c9439e8e677235a88ac"
+    ]
+  }
+}
