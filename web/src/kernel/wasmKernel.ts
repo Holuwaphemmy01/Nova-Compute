@@ -1,6 +1,11 @@
-import { KERNEL_NAME } from "./tsKernel";
-import type { RunOptions, SimKernel, SimParams, SimProgress, SimResult } from "./types";
+/**
+ * The Simulation lab's kernel: the Rust kernel compiled to WebAssembly, running in a
+ * Web Worker. Implements the SimKernel interface from ./types.
+ */
 import type { ToWorker } from "./sim.worker";
+import type { RunOptions, SimKernel, SimParams, SimProgress, SimResult } from "./types";
+
+export const KERNEL_NAME = "Rust kernel (WebAssembly)";
 
 type FromWorker =
   | { type: "progress"; id: number; progress: SimProgress }
@@ -18,8 +23,8 @@ const abortError = () => new DOMException("Simulation cancelled", "AbortError");
 
 export const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
 
-/** SimKernel backed by a Web Worker. Only one run at a time: a new run cancels the old one. */
-export function createWorkerKernel(): SimKernel & { dispose(): void } {
+/** Worker-backed WASM kernel. One run at a time: a new run cancels the old one. */
+export function createWasmKernel(): SimKernel & { dispose(): void } {
   const worker = new Worker(new URL("./sim.worker.ts", import.meta.url), { type: "module" });
   const pending = new Map<number, Pending>();
   let nextId = 1;

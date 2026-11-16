@@ -48,4 +48,15 @@ src/
 └── pages/                 # one file per screen
 ```
 
-The WASM kernel build output goes in `public/pkg/` (git-ignored).
+## Simulation kernel (Rust → WASM)
+
+The Simulation lab runs the Rust kernel from [`../kernel`](../kernel) compiled to WebAssembly,
+inside a Web Worker (`src/kernel/wasmKernel.ts` → `sim.worker.ts` → `wasmRun.ts`).
+
+The compiled package in `src/kernel/pkg/` is **committed**, so the app builds without a Rust
+toolchain. After changing the kernel, rebuild it (needs Rust + wasm-pack) and commit the result:
+
+```bash
+pnpm kernel:build   # wasm-pack build ../kernel --target web --release → src/kernel/pkg
+pnpm test           # includes a check that pkg reproduces the kernel's GOLDEN hash
+```

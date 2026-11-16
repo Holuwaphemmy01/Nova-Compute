@@ -4,7 +4,7 @@ import { SiteHeader } from "../components/Headers";
 import { Tracks } from "../components/Tracks";
 import { Chips, ProgressBar, Segmented, SliderLabel, btnPrimary, card } from "../components/ui";
 import type { SimKernel, SimParams, SimProgress, SimResult, Track as KernelTrack } from "../kernel/types";
-import { createWorkerKernel, isAbort } from "../kernel/workerKernel";
+import { createWasmKernel, isAbort } from "../kernel/wasmKernel";
 import { fmt } from "../lib/random";
 import type { Track as DrawnTrack } from "../lib/walk";
 
@@ -85,7 +85,7 @@ export default function Lab() {
   const lastRun = useRef<{ params: SimParams; fingerprint: string } | null>(null);
 
   useEffect(() => {
-    const k = createWorkerKernel();
+    const k = createWasmKernel();
     kernel.current = k;
     return () => {
       k.dispose();
@@ -112,7 +112,7 @@ export default function Lab() {
     setTracks([]);
     setRunParams(p);
     try {
-      // Both device options run the CPU worker until the GPU kernel ships.
+      // Both device options run the WASM kernel on the CPU until the GPU kernel ships.
       const res = await k.run(p, {
         onProgress: (pr) => {
           setProgress(pr);
@@ -147,15 +147,15 @@ export default function Lab() {
     gpu === "checking"
       ? "Checking for WebGPU…"
       : gpu === "unavailable"
-        ? "WebGPU not available on this browser. Runs on your CPU in a background worker."
+        ? "WebGPU not available on this browser. Runs the Rust kernel as WebAssembly on your CPU."
         : device === "gpu"
-          ? "GPU kernel coming soon, running on CPU."
-          : "Runs on your CPU in a background worker.";
+          ? "GPU kernel coming soon, running the WASM kernel on CPU."
+          : "Runs the Rust kernel as WebAssembly on your CPU, in a background worker.";
 
   const status = running
-    ? `Simulating on CPU${device === "gpu" ? " (GPU kernel coming soon)" : ""}…`
+    ? `Simulating on CPU (WASM)${device === "gpu" ? ", GPU kernel coming soon" : ""}…`
     : result
-      ? `Done in ${result.res.ms.toFixed(0)} ms of compute on CPU`
+      ? `Done in ${result.res.ms.toFixed(0)} ms of compute on CPU (WASM)`
       : error
         ? "Something went wrong"
         : "Ready";
@@ -211,7 +211,7 @@ export default function Lab() {
                 onChange={setDevice}
                 options={[
                   { value: "gpu", label: "GPU (beta)", disabled: gpu !== "available" },
-                  { value: "cpu", label: "CPU" },
+                  { value: "cpu", label: "CPU (WASM)" },
                 ]}
               />
               <span style={{ fontSize: 13, color: "var(--faint)" }} aria-live="polite">{gpuNote}</span>
@@ -283,7 +283,7 @@ export default function Lab() {
                     Run it again with the same seed: you'll get the same fingerprint. That's how Nova checks work.
                   </span>
                   <span style={{ fontSize: 12, color: "var(--faint)" }}>
-                    Ran on CPU · {kernel.current?.name ?? "reference kernel"}
+                    Ran on CPU · {kernel.current?.name ?? "Rust kernel (WebAssembly)"}
                   </span>
                 </div>
                 <Link to="/jobs/new" className="pri" style={{ ...btnPrimary, minHeight: 50, padding: "0 22px", whiteSpace: "nowrap" }}>

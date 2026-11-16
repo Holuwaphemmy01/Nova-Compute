@@ -1,6 +1,6 @@
 /**
- * The simulation-kernel contract. The UI depends ONLY on these types, so the
- * TypeScript reference kernel can be swapped for the Rust → WASM kernel later.
+ * The simulation-kernel contract. The UI depends ONLY on these types; the
+ * implementation is the Rust kernel (kernel/) compiled to WASM, see ./wasmKernel.
  */
 
 export type Fate = "transmitted" | "reflected" | "absorbed";
@@ -31,7 +31,7 @@ export interface SimProgress {
 }
 
 export interface SimResult extends SimProgress {
-  /** Hex SHA-256 over the canonical params + final counts. */
+  /** The kernel's chunk hash: hex SHA-256 of job_id ‖ index ‖ canonical output bytes. */
   fingerprint: string;
   /** Total compute time in ms. */
   ms: number;
@@ -47,6 +47,3 @@ export interface SimKernel {
   readonly name: string;
   run(params: SimParams, options?: RunOptions): Promise<SimResult>;
 }
-
-/** Safety cap on collisions per particle; capped particles count as absorbed. */
-export const MAX_STEPS = 200;

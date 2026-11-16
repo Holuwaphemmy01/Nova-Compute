@@ -1,11 +1,11 @@
 /**
- * Runs the simulation off the main thread so the page never freezes.
+ * Runs the WASM kernel off the main thread so the page never freezes.
  * Protocol (main → worker): { type: "run", id, params } | { type: "cancel", id }
  * Protocol (worker → main): { type: "progress" | "done" | "cancelled" | "error", id, ... }
  * Starting a new run cancels any run still in progress.
  */
-import { runSimulation } from "./tsKernel";
 import type { SimParams } from "./types";
+import { runWasmSimulation } from "./wasmRun";
 
 export type ToWorker = { type: "run"; id: number; params: SimParams } | { type: "cancel"; id: number };
 
@@ -30,7 +30,7 @@ ctx.onmessage = async (e) => {
   runs.set(msg.id, ctrl);
 
   try {
-    const result = await runSimulation(msg.params, {
+    const result = await runWasmSimulation(msg.params, {
       signal: ctrl.signal,
       onProgress: (progress) => ctx.postMessage({ type: "progress", id: msg.id, progress }),
     });

@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "kernel:build": "wasm-pack build ../kernel --target web --release --out-dir ../web/src/kernel/pkg --no-pack && node -e \"require('fs').rmSync('src/kernel/pkg/.gitignore',{force:true})\"",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
@@ -16,6 +17,7 @@
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
