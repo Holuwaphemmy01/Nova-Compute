@@ -11,8 +11,12 @@ export interface EscrowParams {
   refundAfter: bigint; // nLockTime threshold (block height < 500M, else unix time)
 }
 
-/** Fee margin left in each chunk UTXO; it pays the payout transaction's miner fee. */
-export const FEE_MARGIN = 500n;
+/**
+ * Fee margin left in each chunk UTXO; it pays the payout transaction's miner fee.
+ * A payout tx is 509 bytes (it carries the 245-byte redeem script), so 500 sats would be
+ * 0.98 sat/B, below the 1 sat/B relay minimum. 600 sats ≈ 1.18 sat/B.
+ */
+export const FEE_MARGIN = 600n;
 
 /** Value of one chunk UTXO: two workers' pay plus the fee margin. */
 export const chunkValue = (price: bigint) => 2n * price + FEE_MARGIN;
