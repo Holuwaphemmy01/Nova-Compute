@@ -1,22 +1,95 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { api, humanError } from "../api/client";
 import { AppHeader } from "../components/Headers";
 import { CheckIcon, SliderLabel, Spinner } from "../components/ui";
-import { useWalletState } from "../wallet/store";
+import { shortAddress } from "../config/env";
+import { createWasmKernel, kernelHash } from "../kernel/wasmKernel";
+import { browserWorker, useBrowserWorker } from "../lib/browserWorker";
 import { fmt } from "../lib/random";
-import { useInterval } from "../lib/useInterval";
+import { useWorkerSession, workerSession } from "../lib/workerSession";
+import { NetworkBanner } from "../wallet/NetworkBanner";
+import { useWalletState } from "../wallet/store";
 
-// TODO(kernel): real checks — navigator.gpu, a known-answer test chunk, wallet address.
-const CHECKS = ["Your browser supports WebGPU", "Your GPU gives the same answer as ours", "Payouts go to your connected wallet"];
+type CheckState = "waiting" | "active" | "done" | "info" | "failed";
+interface Check {
+  title: string;
+  state: CheckState;
+  detail?: string;
+}
+
+/** Runs the real setup checks: kernel loads, determinism vs GOLDEN, WebGPU (info), payout wallet. */
+function useSetupChecks(walletAddress: string | null) {
+  const [kernel, setKernel] = useState<Check>({ title: "Nova's kernel loads in this tab", state: "active" });
+  const [determinism, setDeterminism] = useState<Check>({ title: "Your device gives the same answer as ours", state: "waiting" });
+  const [gpu, setGpu] = useState<Check>({ title: "Checking for WebGPU", state: "active" });
+  const [hash, setHash] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const k = createWasmKernel();
+    kernelHash()
+      .then(async (h) => {
+        if (!alive) return;
+        setHash(h);
+        setKernel((c) => ({ ...c, state: "done" }));
+        setDeterminism((c) => ({ ...c, state: "active" }));
+        const r = await k.selfTest();
+        if (!alive) return;
+        setDeterminism((c) => (r.ok ? { ...c, state: "done", detail: `matched in ${Math.round(r.ms)} ms` } : { ...c, state: "failed", detail: "Your browser computed a different result, so it can't take part. Try another browser." }));
+      })
+      .catch((e) => alive && setKernel((c) => ({ ...c, state: "failed", detail: humanError(e) })))
+      .finally(() => k.dispose());
+
+    const nav = navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } };
+    (nav.gpu ? nav.gpu.requestAdapter().catch(() => null) : Promise.resolve(null)).then((adapter) => {
+      if (!alive) return;
+      setGpu(adapter ? { title: "WebGPU available", state: "info", detail: "the GPU kernel is coming soon; for now Nova runs on your CPU" } : { title: "No WebGPU in this browser", state: "info", detail: "Nova runs on your CPU" });
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const wallet: Check = walletAddress
+    ? { title: `Payouts go to ${shortAddress(walletAddress)}`, state: "done" }
+    : { title: "Connect a wallet for your payouts", state: "failed", detail: "connect" };
+
+  const deviceOk = kernel.state === "done" && determinism.state === "done";
+  const deviceFailed = kernel.state === "failed" || determinism.state === "failed";
+  return { checks: [kernel, determinism, gpu, wallet], ready: deviceOk && !!walletAddress, deviceOk, deviceFailed, hash };
+}
 
 export default function ProviderSetup() {
-  const [stage, setStage] = useState(0);
-  const [limit, setLimit] = useState(60);
-  useWalletState();
-  const ready = stage >= CHECKS.length;
-  useInterval(() => setStage((s) => Math.min(CHECKS.length, s + 1)), ready ? null : 750);
+  const wallet = useWalletState();
+  const navigate = useNavigate();
+  const loop = useBrowserWorker();
+  const session = useWorkerSession();
+  const { checks, ready, deviceOk, deviceFailed, hash } = useSetupChecks(wallet.address);
+  const waitingLabel = deviceFailed ? "This device can't take part" : deviceOk ? "Connect a wallet to start" : "Checking your setup…";
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const goBase = { width: "100%", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60, borderRadius: 999, fontWeight: 600, fontSize: 17, textDecoration: "none" } as const;
+  async function start() {
+    if (!ready || !hash || !wallet.address) return;
+    setStarting(true);
+    setError(null);
+    try {
+      if (!session || session.payoutAddr !== wallet.address) {
+        const s = await api.createSession(wallet.address, hash);
+        workerSession.set({ workerId: s.worker_id, token: s.token, payoutAddr: wallet.address });
+      }
+      browserWorker.start();
+      navigate("/provider/earnings");
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const goBase = { width: "100%", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60, borderRadius: 999, fontWeight: 600, fontSize: 17, textDecoration: "none", border: 0, fontFamily: "var(--sans)" } as const;
+  const earning = loop.status !== "stopped" && loop.status !== "paused" && loop.status !== "error";
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -49,42 +122,53 @@ export default function ProviderSetup() {
         </div>
 
         <ul className="in d2" aria-label="Setup checks" style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, textAlign: "left", listStyle: "none", margin: 0, padding: 0 }}>
-          {CHECKS.map((title, i) => {
-            const done = i < stage, active = i === stage;
-            return (
-              <li key={title} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 16, background: "var(--surface)" }}>
-                <span style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
-                  {done && (
-                    <span className="tick" style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <CheckIcon />
-                    </span>
-                  )}
-                  {active && <Spinner size={16} />}
-                  {!done && !active && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--chip-border)" }} />}
-                </span>
-                <span style={{ fontSize: 15, fontWeight: 500, color: i <= stage ? "var(--ink)" : "var(--faint)" }}>
-                  {title}
-                  <span className="sr-only">{done ? " (passed)" : active ? " (checking)" : " (waiting)"}</span>
-                </span>
-              </li>
-            );
-          })}
+          {checks.map((c) => (
+            <li key={c.title} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 16, background: c.state === "failed" ? "#FFF6E3" : "var(--surface)" }}>
+              <span style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+                {c.state === "done" && (
+                  <span className="tick" style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <CheckIcon />
+                  </span>
+                )}
+                {c.state === "active" && <Spinner size={16} />}
+                {c.state === "info" && <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid var(--chip-border)", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>i</span>}
+                {c.state === "failed" && <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", background: "#FFC85C", border: "2px solid var(--ink)", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>!</span>}
+                {c.state === "waiting" && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--chip-border)" }} />}
+              </span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontSize: 15, fontWeight: 500, color: c.state === "waiting" ? "var(--faint)" : "var(--ink)" }}>{c.title}</span>
+                {c.detail === "connect" ? (
+                  <Link to="/connect?role=provider" style={{ fontSize: 13, fontWeight: 600 }}>Connect wallet →</Link>
+                ) : c.detail ? (
+                  <span style={{ fontSize: 13, color: c.state === "failed" ? "#6B4700" : "var(--muted)" }}>{c.detail}</span>
+                ) : null}
+              </span>
+            </li>
+          ))}
         </ul>
+        <NetworkBanner compact />
 
         <label style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12, textAlign: "left" }}>
-          <SliderLabel label="Use up to" value={`${limit}% of my GPU`} />
-          <input type="range" min={10} max={100} step={10} value={limit} onChange={(e) => setLimit(Number(e.target.value))} />
+          <SliderLabel label="Use up to" value={`${loop.limit}% of my device`} />
+          <input type="range" min={10} max={100} step={10} value={loop.limit} onChange={(e) => browserWorker.setLimit(Number(e.target.value))} />
         </label>
 
-        {ready ? (
+        {earning ? (
           <Link to="/provider/earnings" className="go" style={{ ...goBase, background: "var(--ink)", color: "#FFFFFF" }}>
-            Start earning
+            You're earning · see earnings
           </Link>
         ) : (
-          <span role="status" aria-disabled="true" style={{ ...goBase, background: "var(--surface-2)", color: "var(--faint)" }}>
-            Checking your setup…
-          </span>
+          <button
+            type="button"
+            className="go"
+            onClick={start}
+            disabled={!ready || starting}
+            style={{ ...goBase, background: ready ? "var(--ink)" : "var(--surface-2)", color: ready ? "#FFFFFF" : "var(--faint)", cursor: ready ? "pointer" : "default" }}
+          >
+            {starting ? "Starting…" : ready ? "Start earning" : waitingLabel}
+          </button>
         )}
+        {error && <p role="alert" style={{ margin: 0, width: "100%", padding: "12px 16px", borderRadius: 14, background: "#FFF6E3", color: "#6B4700", fontSize: 14 }}>{error}</p>}
         <span style={{ fontSize: 13, color: "var(--faint)" }}>Close the tab any time to stop.</span>
         <Link to="/provider/machines" style={{ fontSize: 15, fontWeight: 600 }}>Have a gaming PC or rig? Connect a GPU machine →</Link>
       </main>

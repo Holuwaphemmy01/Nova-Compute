@@ -220,6 +220,11 @@ async fn honest_job_four_chunks_pays_and_writes_merkle_root() {
         let (_, me) = env.call("GET", "/api/v1/workers/me", Some(t), None).await;
         assert_eq!(me["earned_sats"], 4 * 1200);
         assert_eq!(me["verified"], 4);
+        let recent = me["recent_payouts"].as_array().unwrap();
+        assert_eq!(recent.len(), 4);
+        assert!(recent.iter().all(|p| p["sats"] == 1200 && p["job_id"] == job_id.as_str()));
+        let txids: std::collections::HashSet<String> = txs[..4].iter().map(|t| t.txid_hex()).collect();
+        assert!(recent.iter().all(|p| txids.contains(p["txid"].as_str().unwrap())));
     }
 
     // Close: researcher gets the oracle close signature; nothing left to sweep.
@@ -313,13 +318,13 @@ async fn futures_join(env: &Env, labels: &[&str]) -> Vec<(String, PrivateKey)> {
 
 #[tokio::test]
 async fn leases_expire_and_one_lease_per_worker() {
-    let env = env_with(|s| s.lease_ms = 50).await;
+    let env = env_with(|s| s.lease_ms = 400).await;
     env.funded_job(2, 500).await;
     let (t1, _) = env.worker("test/a").await;
     let (t2, _) = env.worker("test/b").await;
     let l1 = env.next(&t1).await.unwrap();
     assert_eq!(env.next(&t1).await.unwrap()["assignment_id"], l1["assignment_id"], "same active lease returned");
-    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     let (s, h) = compute(&l1);
     let (code, v) = env.submit(&t1, &l1, &s, h).await;
     assert_eq!(code, 410, "{v}");

@@ -1,13 +1,21 @@
 /**
  * Runs the WASM kernel off the main thread so the page never freezes.
- * Protocol (main → worker): { type: "run", id, params } | { type: "cancel", id }
- * Protocol (worker → main): { type: "progress" | "done" | "cancelled" | "error", id, ... }
- * Starting a new run cancels any run still in progress.
+ * Requests (main → worker):
+ *   { type: "run", id, params }        Simulation lab run (paced, for display)
+ *   { type: "chunk", id, job }         a leased coordinator chunk (full speed)
+ *   { type: "selftest", id }           determinism self-test (GOLDEN)
+ *   { type: "cancel", id }
+ * Replies (worker → main): { type: "progress" | "done" | "cancelled" | "error", id, ... }
+ * Starting a new request cancels any request still in progress.
  */
 import type { SimParams } from "./types";
-import { runWasmSimulation } from "./wasmRun";
+import { runChunk, runWasmSimulation, selfTest, type ChunkJob } from "./wasmRun";
 
-export type ToWorker = { type: "run"; id: number; params: SimParams } | { type: "cancel"; id: number };
+export type ToWorker =
+  | { type: "run"; id: number; params: SimParams }
+  | { type: "chunk"; id: number; job: ChunkJob }
+  | { type: "selftest"; id: number }
+  | { type: "cancel"; id: number };
 
 const ctx = self as unknown as {
   postMessage(message: unknown): void;
@@ -28,12 +36,15 @@ ctx.onmessage = async (e) => {
   runs.clear();
   const ctrl = new AbortController();
   runs.set(msg.id, ctrl);
+  const progress = (progress: unknown) => ctx.postMessage({ type: "progress", id: msg.id, progress });
 
   try {
-    const result = await runWasmSimulation(msg.params, {
-      signal: ctrl.signal,
-      onProgress: (progress) => ctx.postMessage({ type: "progress", id: msg.id, progress }),
-    });
+    const result =
+      msg.type === "run"
+        ? await runWasmSimulation(msg.params, { signal: ctrl.signal, onProgress: progress })
+        : msg.type === "chunk"
+          ? await runChunk(msg.job, { signal: ctrl.signal, onProgress: progress })
+          : await selfTest();
     ctx.postMessage({ type: "done", id: msg.id, result });
   } catch (err) {
     if (ctrl.signal.aborted) ctx.postMessage({ type: "cancelled", id: msg.id });

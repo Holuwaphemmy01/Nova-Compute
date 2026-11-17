@@ -282,6 +282,17 @@ pub struct WorkerView {
     pub mismatched: i64,
     pub earned_sats: i64,
     pub active_lease: Option<String>,
+    /// Latest broadcast payouts that paid this worker (newest first, max 10).
+    pub recent_payouts: Vec<RecentPayout>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecentPayout {
+    pub job_id: String,
+    pub index: i64,
+    pub txid: String,
+    pub sats: i64,
+    pub at: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -837,7 +848,20 @@ impl Coordinator {
             .fetch_optional(&self.db)
             .await?
             .map(|r| r.get("id"));
+        let recent = sqlx::query(
+            "SELECT p.job_id, p.idx, p.txid, p.broadcast_at, j.price_per_worker FROM payouts p JOIN jobs j ON j.id = p.job_id
+             WHERE p.status = 'broadcast' AND (p.worker_a_id = ? OR p.worker_b_id = ?) ORDER BY p.broadcast_at DESC LIMIT 10",
+        )
+        .bind(&w.id)
+        .bind(&w.id)
+        .fetch_all(&self.db)
+        .await?;
+        let recent_payouts = recent
+            .iter()
+            .map(|p| RecentPayout { job_id: p.get("job_id"), index: p.get("idx"), txid: p.get("txid"), sats: p.get("price_per_worker"), at: p.get("broadcast_at") })
+            .collect();
         Ok(WorkerView {
+            recent_payouts,
             worker_id: r.get("id"),
             payout_addr: r.get("payout_addr"),
             kernel_hash: r.get("kernel_hash"),

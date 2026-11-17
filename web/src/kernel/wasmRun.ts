@@ -122,3 +122,62 @@ export async function runWasmSimulation(
     sim.free();
   }
 }
+
+// ---------------------------------------------------------------- browser worker: real chunks
+
+/** Kernel GOLDEN hash (kernel/tests/common/mod.rs): L=10, mfp=3, absorb=0.18, job_id=0x00*32,
+ *  seed "0xNOVA2026", index 7, 10,000 trials. A device that reproduces it computes like everyone else. */
+export const GOLDEN = "26b1ba63e890f7348ddab97872a95b5f11e6cfee533228373c9a6ed2a1976ba6";
+
+export interface ChunkJob {
+  jobId: string; // hex, 32 bytes
+  masterSeed: string; // hex
+  index: number;
+  trials: number;
+  params: { thickness_cm: number; mfp_cm: number; absorb_prob: number };
+}
+
+export interface ChunkProgress {
+  done: number;
+  trials: number;
+  sampleTracks: Track[];
+}
+
+export interface ChunkOutput {
+  hash: string;
+  summary: { transmitted: number; reflected: number; absorbed: number; histogram: number[] };
+  computeMs: number;
+}
+
+const yieldToEvents = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/** Computes one leased chunk as fast as possible, reporting progress ~40 times; cancellable. */
+export async function runChunk(job: ChunkJob, { onProgress, signal }: { onProgress?: (p: ChunkProgress) => void; signal?: AbortSignal } = {}): Promise<ChunkOutput> {
+  await loadKernel();
+  const sim = new Simulator(job.params, job.jobId, job.masterSeed, job.index, job.trials);
+  try {
+    const perBatch = Math.max(1, Math.ceil(job.trials / 40));
+    let computeMs = 0;
+    while (sim.done < sim.trials) {
+      if (signal?.aborted) throw abortError();
+      const t0 = performance.now();
+      const p = sim.step(perBatch) as RustProgress;
+      computeMs += performance.now() - t0;
+      onProgress?.({ done: p.done, trials: job.trials, sampleTracks: p.sample_tracks });
+      await yieldToEvents(); // lets cancel messages in
+    }
+    if (signal?.aborted) throw abortError();
+    const t0 = performance.now();
+    const r = sim.finish() as RustResult;
+    computeMs += performance.now() - t0;
+    return { hash: r.hash, summary: { transmitted: r.transmitted, reflected: r.reflected, absorbed: r.absorbed, histogram: r.histogram }, computeMs };
+  } finally {
+    sim.free();
+  }
+}
+
+/** Determinism self-test: runs the kernel's GOLDEN input and compares the hash. */
+export async function selfTest(): Promise<{ ok: boolean; hash: string; ms: number }> {
+  const out = await runChunk({ jobId: "00".repeat(32), masterSeed: hex(utf8.encode("0xNOVA2026")), index: 7, trials: 10_000, params: { thickness_cm: 10, mfp_cm: 3, absorb_prob: 0.18 } });
+  return { ok: out.hash === GOLDEN, hash: out.hash, ms: out.computeMs };
+}

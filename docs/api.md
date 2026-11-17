@@ -64,7 +64,8 @@ with `NovaEscrow.close`. Refused (409) while a verified chunk is still being pai
 
 `POST /workers/session` `{ payout_addr, kernel_hash }` → `201 { worker_id, token }` (`payout_addr` must be a P2PKH cashaddr on the coordinator's network)
 
-`GET /workers/me` → `{ worker_id, payout_addr, kernel_hash, verified, mismatched, earned_sats, active_lease }`
+`GET /workers/me` → `{ worker_id, payout_addr, kernel_hash, verified, mismatched, earned_sats, active_lease, recent_payouts: [{ job_id, index, txid, sats, at }] }`
+(`recent_payouts`: the latest 10 broadcast payouts that paid this worker, newest first)
 
 `POST /work/next` → `200 { assignment_id, job_id, index, master_seed, params, trials, deadline }` or `204` (no work)
 
