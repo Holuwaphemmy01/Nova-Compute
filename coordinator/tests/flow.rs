@@ -389,3 +389,50 @@ fn summary_hash_matches_kernel() {
     assert_eq!(hex::encode(s.chunk_hash(&[0; 32], 7)), r.hash);
     assert_eq!(r.hash, "26b1ba63e890f7348ddab97872a95b5f11e6cfee533228373c9a6ed2a1976ba6", "kernel GOLDEN");
 }
+
+#[tokio::test]
+async fn fund_with_raw_tx_checks_before_broadcasting_then_records() {
+    let env = env().await;
+    let (s, job) = env
+        .call("POST", "/api/v1/jobs", None, Some(json!({ "params": { "thickness_cm": 10.0, "mfp_cm": 3.0, "absorb_prob": 0.18 }, "chunk_count": 2, "trials_per_chunk": 500, "price_per_worker": 1200 })))
+        .await;
+    assert_eq!(s, 201);
+    let id = job["job_id"].as_str().unwrap();
+    let lb = hex::decode(job["locking_bytecode"].as_str().unwrap()).unwrap();
+    // The researcher's coins, already on chain.
+    let coins = Transaction { version: 2, inputs: vec![TxIn { outpoint: OutPoint { txid: sha256(b"cb"), vout: 0 }, unlocking_bytecode: vec![], sequence: 0 }], outputs: vec![TxOut { value: 50_000, locking_bytecode: vec![0x51] }], locktime: 0 };
+    env.chain.add_confirmed(&coins);
+    let spend = |values: &[u64]| Transaction {
+        version: 2,
+        inputs: vec![TxIn { outpoint: OutPoint { txid: coins.txid(), vout: 0 }, unlocking_bytecode: vec![0x51], sequence: 0xffff_ffff }],
+        outputs: values.iter().map(|v| TxOut { value: *v, locking_bytecode: lb.clone() }).collect(),
+        locktime: 0,
+    };
+
+    // Wrong amounts: rejected and NOT broadcast.
+    let (s, v) = env.call("POST", &format!("/api/v1/jobs/{id}/fund"), None, Some(json!({ "raw_tx": spend(&[3000, 2999]).to_hex() }))).await;
+    assert_eq!(s, 400, "{v}");
+    assert!(env.chain.broadcasts().is_empty());
+
+    // Right amounts: broadcast via the chain client, then recorded.
+    let good = spend(&[3000, 3000]);
+    let (s, v) = env.call("POST", &format!("/api/v1/jobs/{id}/fund"), None, Some(json!({ "raw_tx": good.to_hex() }))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["status"], "running");
+    assert_eq!(v["funding_txid"], good.txid_hex());
+    assert_eq!(env.chain.broadcasts(), vec![good.to_hex()]);
+    // Idempotent resend.
+    let (s, _) = env.call("POST", &format!("/api/v1/jobs/{id}/fund"), None, Some(json!({ "raw_tx": good.to_hex() }))).await;
+    assert_eq!(s, 200);
+
+    // GET /tx/{txid} returns the raw tx through the coordinator.
+    let (s, t) = env.call("GET", &format!("/api/v1/tx/{}", good.txid_hex()), None, None).await;
+    assert_eq!(s, 200);
+    assert_eq!(t["hex"], good.to_hex());
+
+    // active_leases shows who is computing.
+    let (tok, _) = env.worker("test/lease-a").await;
+    let lease = env.next(&tok).await.unwrap();
+    let (_, chunks) = env.call("GET", &format!("/api/v1/jobs/{id}/chunks"), None, None).await;
+    assert_eq!(chunks[lease["index"].as_u64().unwrap() as usize]["active_leases"], 1);
+}

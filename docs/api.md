@@ -33,10 +33,16 @@ with `per_chunk_value = 2 × price + 600`.
 `chunk_count` outputs of exactly `per_chunk_value` to the escrow's locking bytecode. Chunk *i* is
 assigned the *i*-th such output. Sets the job `running`. 0-conf funding is accepted (hackathon).
 
+`POST /jobs/{id}/fund` `{ "raw_tx": "<signed tx hex>" }`: for wallets that only sign. The
+coordinator first checks the tx's outputs exactly as `/funded` does (400 and **not broadcast** if
+they don't match), then broadcasts it via Fulcrum and records the chunk outpoints. Idempotent for
+the same tx.
+
 `GET /jobs` (optional `X-Researcher-Address` filter), `GET /jobs/{id}`: job, params, escrow,
 txids, `progress { pending, paying, paid, unpaid }`.
 
-`GET /jobs/{id}/chunks` → `[{ index, status, attempt, outpoint, verified_hash, resolved_by, payout_txid }]`
+`GET /jobs/{id}/chunks` → `[{ index, status, attempt, active_leases, outpoint, verified_hash, resolved_by, payout_txid }]`
+(`active_leases` = workers computing the chunk right now)
 
 `GET /jobs/{id}/result`: totals over verified chunks:
 `{ trials, transmitted, reflected, absorbed, transmitted_fraction, transmitted_std_error, histogram[64] }`.
@@ -48,6 +54,11 @@ odd; OP_RETURN payload `"NOVA" ‖ job_id ‖ root`.
 `POST /jobs/{id}/close` → `{ message, oracle_close_signature, oracle_pubkey, remaining: [{ index, txid, vout, value }] }`:
 the oracle's `close` datasig over `job_id ‖ "close"`, for the researcher to sweep unused chunk UTXOs
 with `NovaEscrow.close`. Refused (409) while a verified chunk is still being paid. Stops scheduling.
+
+### Chain
+
+`GET /tx/{txid}` → `{ txid, hex }`: raw transaction via the coordinator's Fulcrum connection
+(browsers can't speak Electrum TCP). Used by Results to check the OP_RETURN proof.
 
 ### Workers
 

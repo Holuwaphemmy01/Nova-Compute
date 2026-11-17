@@ -194,6 +194,8 @@ pub struct ChunkView {
     pub verified_hash: Option<String>,
     pub resolved_by: Option<String>,
     pub payout_txid: Option<String>,
+    /// Workers currently computing this chunk (unexpired active leases).
+    pub active_leases: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -513,27 +515,23 @@ impl Coordinator {
         })
     }
 
-    /// Verifies the funding tx has `chunk_count` outputs of `per_chunk_value` to the escrow and
-    /// records each chunk's outpoint. Accepts unconfirmed (0-conf) funding.
-    pub async fn mark_funded(&self, job_id: &str, researcher_addr: &str, txid: &str) -> R<JobView> {
-        let _g = self.lock.lock().await;
-        let job = self.job(job_id).await?;
+    /// Checks the caller may fund this job. Ok(true) = already funded by exactly this txid (idempotent).
+    fn funding_precheck(job: &JobRow, researcher_addr: &str, txid: &str) -> R<bool> {
         if job.researcher_addr != researcher_addr {
             return Err(AppError::Forbidden("not this job's researcher".into()));
         }
         if job.status != "awaiting_funding" {
             if job.funding_txid.as_deref() == Some(txid) {
-                drop(_g);
-                return self.get_job(job_id).await; // idempotent
+                return Ok(true);
             }
             return Err(AppError::Conflict(format!("job is {}", job.status)));
         }
-        hex32(txid).map_err(|_| bad("txid must be 32-byte hex"))?;
-        let raw = self.chain.get_transaction(txid).await?;
-        let tx = Transaction::parse_hex(&raw).map_err(|e| bad(format!("funding tx: {e}")))?;
-        if tx.txid_hex() != txid {
-            return Err(AppError::Chain("server returned a different transaction".into()));
-        }
+        Ok(false)
+    }
+
+    /// The funding tx must have >= chunk_count outputs of exactly per_chunk_value to the escrow.
+    /// Returns the vouts used for chunks 0..chunk_count.
+    fn funding_outputs(job: &JobRow, tx: &Transaction) -> R<Vec<u32>> {
         let lb = hex::decode(&job.locking_bytecode).unwrap();
         let matches: Vec<u32> = tx
             .outputs
@@ -550,21 +548,81 @@ impl Coordinator {
                 job.chunk_count
             )));
         }
+        Ok(matches.into_iter().take(job.chunk_count as usize).collect())
+    }
+
+    async fn record_funding(&self, job: &JobRow, txid: &str, vouts: &[u32]) -> R<()> {
         let mut dbtx = self.db.begin().await?;
-        for (idx, vout) in matches.iter().take(job.chunk_count as usize).enumerate() {
+        for (idx, vout) in vouts.iter().enumerate() {
             sqlx::query("UPDATE chunks SET outpoint_txid = ?, outpoint_vout = ?, value = ? WHERE job_id = ? AND idx = ?")
                 .bind(txid)
                 .bind(*vout as i64)
                 .bind(job.per_chunk_value)
-                .bind(job_id)
+                .bind(&job.id)
                 .bind(idx as i64)
                 .execute(&mut *dbtx)
                 .await?;
         }
-        sqlx::query("UPDATE jobs SET status = 'running', funding_txid = ?, updated_at = ? WHERE id = ?").bind(txid).bind(now_ms()).bind(job_id).execute(&mut *dbtx).await?;
+        sqlx::query("UPDATE jobs SET status = 'running', funding_txid = ?, updated_at = ? WHERE id = ?").bind(txid).bind(now_ms()).bind(&job.id).execute(&mut *dbtx).await?;
         dbtx.commit().await?;
-        drop(_g);
+        Ok(())
+    }
+
+    /// Verifies an already-broadcast funding tx (fetched by txid) and records each chunk's
+    /// outpoint. Accepts unconfirmed (0-conf) funding.
+    pub async fn mark_funded(&self, job_id: &str, researcher_addr: &str, txid: &str) -> R<JobView> {
+        {
+            let _g = self.lock.lock().await;
+            let job = self.job(job_id).await?;
+            if !Self::funding_precheck(&job, researcher_addr, txid)? {
+                hex32(txid).map_err(|_| bad("txid must be 32-byte hex"))?;
+                let raw = self.chain.get_transaction(txid).await?;
+                let tx = Transaction::parse_hex(&raw).map_err(|e| bad(format!("funding tx: {e}")))?;
+                if tx.txid_hex() != txid {
+                    return Err(AppError::Chain("server returned a different transaction".into()));
+                }
+                let vouts = Self::funding_outputs(&job, &tx)?;
+                self.record_funding(&job, txid, &vouts).await?;
+            }
+        }
         self.get_job(job_id).await
+    }
+
+    /// Takes a wallet-signed funding tx, checks its outputs BEFORE broadcasting (a wrong tx never
+    /// reaches the network), broadcasts it via Fulcrum, then records it like `mark_funded`.
+    pub async fn fund_with_raw_tx(&self, job_id: &str, researcher_addr: &str, raw_tx: &str) -> R<JobView> {
+        {
+            let _g = self.lock.lock().await;
+            let job = self.job(job_id).await?;
+            let tx = Transaction::parse_hex(raw_tx).map_err(|e| bad(format!("funding tx: {e}")))?;
+            let txid = tx.txid_hex();
+            if !Self::funding_precheck(&job, researcher_addr, &txid)? {
+                let vouts = Self::funding_outputs(&job, &tx)?;
+                match self.chain.broadcast(&tx.to_hex()).await {
+                    Ok(got) if got == txid => {}
+                    Ok(got) => return Err(AppError::Chain(format!("server returned txid {got}, expected {txid}"))),
+                    // A retry after a dropped response: fine if the network already has it.
+                    Err(e) => {
+                        if self.chain.get_transaction(&txid).await.is_err() {
+                            return Err(AppError::Chain(format!("the network rejected the funding transaction: {e}")));
+                        }
+                    }
+                }
+                self.record_funding(&job, &txid, &vouts).await?;
+            }
+        }
+        self.get_job(job_id).await
+    }
+
+    /// Raw tx hex via the coordinator's Fulcrum connection (browsers can't speak Electrum TCP).
+    pub async fn get_raw_tx(&self, txid: &str) -> R<String> {
+        hex32(txid).map_err(|_| bad("txid must be 32-byte hex"))?;
+        let raw = self.chain.get_transaction(txid).await?;
+        let tx = Transaction::parse_hex(&raw).map_err(|e| AppError::Chain(e.to_string()))?;
+        if tx.txid_hex() != txid {
+            return Err(AppError::Chain("server returned a different transaction".into()));
+        }
+        Ok(raw)
     }
 
     async fn progress(&self, job_id: &str) -> R<Progress> {
@@ -630,9 +688,11 @@ impl Coordinator {
     pub async fn get_chunks(&self, job_id: &str) -> R<Vec<ChunkView>> {
         self.job(job_id).await?;
         let rows = sqlx::query(
-            "SELECT c.*, p.txid AS payout_txid, p.status AS payout_status FROM chunks c
-             LEFT JOIN payouts p ON p.job_id = c.job_id AND p.idx = c.idx WHERE c.job_id = ? ORDER BY c.idx",
+            "SELECT c.*, p.txid AS payout_txid, p.status AS payout_status,
+               (SELECT COUNT(*) FROM assignments a WHERE a.job_id = c.job_id AND a.idx = c.idx AND a.status = 'active' AND a.deadline >= ?) AS active_leases
+             FROM chunks c LEFT JOIN payouts p ON p.job_id = c.job_id AND p.idx = c.idx WHERE c.job_id = ? ORDER BY c.idx",
         )
+        .bind(now_ms())
         .bind(job_id)
         .fetch_all(&self.db)
         .await?;
@@ -650,6 +710,7 @@ impl Coordinator {
                     verified_hash: r.get("verified_hash"),
                     resolved_by: r.get("resolved_by"),
                     payout_txid: if payout_status.as_deref() == Some("broadcast") { r.get("payout_txid") } else { None },
+                    active_leases: r.get("active_leases"),
                 }
             })
             .collect())

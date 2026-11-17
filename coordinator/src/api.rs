@@ -73,6 +73,8 @@ pub fn router(state: AppState) -> Router {
         .route("/jobs", post(create_job).get(list_jobs))
         .route("/jobs/{id}", get(get_job))
         .route("/jobs/{id}/funded", post(mark_funded))
+        .route("/jobs/{id}/fund", post(fund_job))
+        .route("/tx/{txid}", get(get_tx))
         .route("/jobs/{id}/chunks", get(get_chunks))
         .route("/jobs/{id}/result", get(get_result))
         .route("/jobs/{id}/proof", get(get_proof))
@@ -108,6 +110,20 @@ struct Funded {
 
 async fn mark_funded(State(c): State<AppState>, Researcher(r): Researcher, Path(id): Path<String>, Json(b): Json<Funded>) -> Result<impl IntoResponse, AppError> {
     Ok(Json(c.mark_funded(&id, &r, b.txid.trim()).await?))
+}
+
+#[derive(Deserialize)]
+struct Fund {
+    raw_tx: String,
+}
+
+async fn fund_job(State(c): State<AppState>, Researcher(r): Researcher, Path(id): Path<String>, Json(b): Json<Fund>) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(c.fund_with_raw_tx(&id, &r, b.raw_tx.trim()).await?))
+}
+
+async fn get_tx(State(c): State<AppState>, Path(txid): Path<String>) -> Result<impl IntoResponse, AppError> {
+    let hex = c.get_raw_tx(&txid).await?;
+    Ok(Json(json!({ "txid": txid, "hex": hex })))
 }
 
 async fn list_jobs(State(c): State<AppState>, headers: HeaderMap) -> Result<impl IntoResponse, AppError> {
