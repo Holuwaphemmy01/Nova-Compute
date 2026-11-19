@@ -1,4 +1,34 @@
-# Manual chipnet end-to-end
+# Chipnet end-to-end
+
+## Coordinator run: done (Nov 20, 2026)
+
+`cargo run -p nova-coordinator --bin e2e -- --chunks 4 --price 1200` on chipnet. The real
+coordinator funded a 4-chunk job from its fee wallet, two in-process workers (native kernel, different
+payout addresses) computed every chunk, all 4 hashes matched, and it broadcast 4 payouts and the
+Merkle-root OP_RETURN. Each tx was then checked independently against a public chipnet Fulcrum
+(`chipnet.bch.ninja`): each payout spends its own escrow output and pays 2 × 1,200 sats, and the
+network accepted it, so the NovaEscrow contract script passed on chain.
+
+- Job: `5c6b9b7a9dda033d10389cd013cd69e6b58f9b5fffa79b4137db591bef48cbf5`
+- Escrow: `bchtest:p0ztzmyzwqxpvw92z54l5wf8xxzntxe4cg6jc73qjaqf3zjzzusqg93kmjvxa`
+- Workers: `bchtest:qzkyp6k4kyz2vm09falmqqqkgux77zz3rshsa9xqq7`, `bchtest:qp5rws6w2zt6hf5wuntn038tz6jeu9tguq3xyvspkx`
+- Merkle root: `c172fa784c380cf5ce74fa4f6dba810ec166b1fda230093c5b0491d1f5646660`
+- Result: 11.11 % transmitted ± 0.16 % over 40,000 particles
+
+| Step | Txid |
+|---|---|
+| Funding (4 × 3,000 sats → escrow) | [`b74aed33b3e144fa73a450b8214aac0e4fee5d64d6118c37c94462691d66c8c1`](https://chipnet.imaginary.cash/tx/b74aed33b3e144fa73a450b8214aac0e4fee5d64d6118c37c94462691d66c8c1) |
+| Payout chunk 0 | [`150f83a597ad1371ceb31a1a91db59aa72c4928391dbb4c37056ff9bf845cad7`](https://chipnet.imaginary.cash/tx/150f83a597ad1371ceb31a1a91db59aa72c4928391dbb4c37056ff9bf845cad7) |
+| Payout chunk 1 | [`55dc97fcb7a6f4ccee3f9c1f7729c98c12f9ef157c3cdf91bdce72f3b4e1f4c3`](https://chipnet.imaginary.cash/tx/55dc97fcb7a6f4ccee3f9c1f7729c98c12f9ef157c3cdf91bdce72f3b4e1f4c3) |
+| Payout chunk 2 | [`0d4c199dd1a984736770e486b2816130f9697a42387c6fe0a9c77e9e051c3b23`](https://chipnet.imaginary.cash/tx/0d4c199dd1a984736770e486b2816130f9697a42387c6fe0a9c77e9e051c3b23) |
+| Payout chunk 3 | [`19b7872cf9f357e96ce09281b1ff2942119243aab087f3dfb3b07cc10852e6b1`](https://chipnet.imaginary.cash/tx/19b7872cf9f357e96ce09281b1ff2942119243aab087f3dfb3b07cc10852e6b1) |
+| OP_RETURN proof | [`82456f8d45c1d2269db6e2c37184872ef676f77c5f0bf0f9bfd1d7c0b3b37c9a`](https://chipnet.imaginary.cash/tx/82456f8d45c1d2269db6e2c37184872ef676f77c5f0bf0f9bfd1d7c0b3b37c9a) |
+
+The browser + wallet run below is the remaining manual check.
+
+---
+
+# Manual chipnet end-to-end (browser + wallets)
 
 A full run of Nova on chipnet with real wallets: a researcher funds a 4-piece job from a
 WizardConnect wallet, two browser workers compute it, both get paid, and the result is verified
