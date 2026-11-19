@@ -1,0 +1,15 @@
+# Build context = repo root; the coordinator image needs only Cargo files, kernel/, coordinator/
+# and contracts/artifacts/.
+target
+**/node_modules
+web
+design
+docs
+contracts/node_modules
+contracts/test
+contracts/scripts
+.git
+.env
+**/.env
+*.db
+*.db-*

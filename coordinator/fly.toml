@@ -1,0 +1,43 @@
+# Fly.io config for the Nova coordinator. Deploy from the REPO ROOT:
+#   fly launch --no-deploy --copy-config --config coordinator/fly.toml     (first time; pick an app name)
+#   fly volumes create nova_data --size 1 --config coordinator/fly.toml
+#   fly secrets set ORACLE_WIF=... FEE_WIF=... CORS_ORIGIN=https://<your-web-app> --config coordinator/fly.toml
+#   fly deploy . --config coordinator/fly.toml --dockerfile coordinator/Dockerfile
+# (the trailing "." makes the repo root the build context; the image needs kernel/ and contracts/)
+#
+# SQLite on a volume means exactly ONE machine: don't scale out.
+
+app = "nova-coordinator"
+primary_region = "ams"
+
+[build]
+  dockerfile = "coordinator/Dockerfile"
+
+[env]
+  NETWORK = "chipnet"
+  PORT = "8080"
+  DATABASE_URL = "sqlite:///data/nova.db"
+  RUST_LOG = "info,sqlx=warn"
+
+[[mounts]]
+  source = "nova_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Always on: the payout loop and job finalization run in the background.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
