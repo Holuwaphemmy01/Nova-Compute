@@ -18,14 +18,24 @@ lower-case hex, times unix milliseconds unless noted.
 `POST /jobs` (header `X-Researcher-Address`)
 
 ```json
-{ "params": { "thickness_cm": 10, "mfp_cm": 3, "absorb_prob": 0.18 },
+{ "template": "neutron_slab",
+  "params": { "thickness_cm": 10, "mfp_cm": 3, "absorb_prob": 0.18 },
   "chunk_count": 4, "trials_per_chunk": 10000, "price_per_worker": 1200,
   "master_seed": "<hex, optional>", "refund_after": 1800000000 }
 ```
 
-Validation: kernel params valid; `price_per_worker` ≥ 546 (dust); `chunk_count` 1..=1000;
-`trials_per_chunk` 1..=5,000,000; `master_seed` 1..=64 bytes (random if omitted);
-`refund_after` defaults to now + 7 days.
+`template` is optional and defaults to `neutron_slab`, so older clients keep working. The params
+and the meaning of a chunk depend on the template (defaults shown):
+
+| `template` | `params` | one chunk = | `chunk_count` | `trials_per_chunk` |
+|---|---|---|---|---|
+| `neutron_slab` | `thickness_cm`, `mfp_cm`, `absorb_prob` (all required) | `trials` particles | 1..=1000 | required, 1..=5,000,000 |
+| `ising_2d` | `L` 32 (16..=64), `t_min` 1.5, `t_max` 3.5, `eq_sweeps` 1000, `meas_sweeps` 2000 | one temperature T_i = t_min + i·(t_max − t_min)/(n − 1) | 8..=64 (= `n_temps`) | = `meas_sweeps` |
+| `sir_epidemic` | `population` 10000 (100..=100,000), `initial_infected` 10, `r0` 2.5 (0.5..=6), `recovery_days` 7 (1..=60), `runs_per_chunk` 200 | `runs_per_chunk` independent outbreaks | 4..=200 | = `runs_per_chunk` |
+
+Other validation: `price_per_worker` ≥ 546 (dust); `master_seed` 1..=64 bytes (random if
+omitted); `refund_after` defaults to now + 7 days. The stored `params` have defaults filled in
+(Ising adds `n_temps`), and `config_hash` commits to the template and params.
 → `201 { job_id, config_hash, chunk_count, escrow_address, locking_bytecode, per_chunk_value, total_sats, status: "awaiting_funding" }`
 with `per_chunk_value = 2 × price + 600`.
 
@@ -38,14 +48,19 @@ coordinator first checks the tx's outputs exactly as `/funded` does (400 and **n
 they don't match), then broadcasts it via Fulcrum and records the chunk outpoints. Idempotent for
 the same tx.
 
-`GET /jobs` (optional `X-Researcher-Address` filter), `GET /jobs/{id}`: job, params, escrow,
-txids, `progress { pending, paying, paid, unpaid }`.
+`GET /jobs` (optional `X-Researcher-Address` filter), `GET /jobs/{id}`: job, `template`, params,
+escrow, txids, `progress { pending, paying, paid, unpaid }`.
 
 `GET /jobs/{id}/chunks` → `[{ index, status, attempt, active_leases, outpoint, verified_hash, resolved_by, payout_txid }]`
 (`active_leases` = workers computing the chunk right now)
 
-`GET /jobs/{id}/result`: totals over verified chunks:
-`{ trials, transmitted, reflected, absorbed, transmitted_fraction, transmitted_std_error, histogram[64] }`.
+`GET /jobs/{id}/result`: aggregate over the chunks verified so far (it fills in while the job
+runs). Always `{ job_id, status, template, chunks_verified, chunk_count, … }`, plus:
+
+- `neutron_slab`: `{ trials, transmitted, reflected, absorbed, transmitted_fraction, transmitted_std_error, histogram[64] }`
+- `ising_2d`: `{ points: [{ T, m, e, chi, c }] (sorted by T; m = ⟨|m|⟩, e = ⟨e⟩ per spin, χ, C), tc (T where χ peaks), tc_theory (2.269…, Onsager), lattice: { T, L, bits } }`.
+  `lattice` is the final spins of the chunk nearest Tc: hex of L·L bits, row-major, LSB-first per byte, 1 = +1.
+- `sir_epidemic`: `{ runs, final_size_hist[64], peak_hist[64] (fractions of N over [0,1]), major_outbreaks, p_major (final size > 10%), major_final_size_mean, mean_peak_day, sample_curves: [[180 daily infected counts], …] (first run of up to 5 chunks) }`
 
 `GET /jobs/{id}/proof` → `{ merkle_root, op_return_txid, funding_txid, leaves: [{ index, hash, resolved_by, payout_txid }] }`.
 Merkle rule: SHA-256 over pairs of verified chunk hashes in index order, duplicating the last when
@@ -67,11 +82,18 @@ with `NovaEscrow.close`. Refused (409) while a verified chunk is still being pai
 `GET /workers/me` → `{ worker_id, payout_addr, kernel_hash, verified, mismatched, earned_sats, active_lease, recent_payouts: [{ job_id, index, txid, sats, at }] }`
 (`recent_payouts`: the latest 10 broadcast payouts that paid this worker, newest first)
 
-`POST /work/next` → `200 { assignment_id, job_id, index, master_seed, params, trials, deadline }` or `204` (no work)
+`POST /work/next` → `200 { assignment_id, job_id, index, master_seed, template, params, trials, deadline }` or `204` (no work).
+Compute with the kernel: `templates::run_chunk(template, params, job_id, master_seed, index, trials)`
+(native) or `new TemplateSimulator(template, JSON.stringify(params), job_id, master_seed, index, trials)` (WASM).
 
-`POST /work/{assignment_id}/result` `{ hash, summary: { transmitted, reflected, absorbed, histogram[64] } }`
-→ `{ status: "accepted" | "verified" | "mismatch" }`. The summary must reproduce the hash
-(`sha256(job_id ‖ index u32 BE ‖ u32 LE t, r, a, 64 bins)`), and the counts must sum to `trials`.
+`POST /work/{assignment_id}/result` `{ hash, output: "<hex>" }` (any template) or, for
+`neutron_slab` only, `{ hash, summary: { transmitted, reflected, absorbed, histogram[64] } }`
+→ `{ status: "accepted" | "verified" | "mismatch" }`.
+The result must reproduce the hash, `sha256(job_id ‖ index u32 BE ‖ output_bytes)` with the
+template's canonical output bytes (kernel/README.md), and must decode for the job:
+- neutron: counts sum to `trials`;
+- Ising: the output's temperature is this chunk's T_i, bit for bit;
+- SIR: it holds exactly `trials` outbreaks.
 
 ### Scheduling and verification rules
 

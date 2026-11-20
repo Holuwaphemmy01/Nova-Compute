@@ -1,6 +1,8 @@
 //! Real chipnet end-to-end run of the coordinator.
 //!
 //!   cargo run -p nova-coordinator --bin e2e -- --chunks 4 --price 1200 [--trials 10000]
+//!   cargo run -p nova-coordinator --bin e2e -- --template ising --chunks 8 --price 1200
+//!   cargo run -p nova-coordinator --bin e2e -- --template sir --chunks 4 --price 1200
 //!
 //! Needs ORACLE_WIF and FEE_WIF (chipnet) in the environment or a .env file; the FEE_WIF wallet
 //! funds the job (it plays the researcher, so close/refund would return funds to it) and pays
@@ -15,8 +17,15 @@ use nova_coordinator::{
     chain_client::ChainClient,
     config::Config,
     fulcrum::FulcrumClient,
-    service::{self, Coordinator, CreateJob, JobParams, Summary, Worker},
+    service::{self, Coordinator, CreateJob, Submission, Worker},
 };
+use nova_kernel::templates::{self, Template};
+use serde_json::json;
+
+fn str_arg(name: &str, default: &str) -> String {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| default.to_string())
+}
 
 fn arg(name: &str, default: u64) -> u64 {
     let args: Vec<String> = std::env::args().collect();
@@ -37,14 +46,17 @@ async fn run_worker(c: Arc<Coordinator>, w: Worker, job_id: String) -> u32 {
             tokio::time::sleep(Duration::from_millis(500)).await;
             continue;
         };
-        let params = nova_kernel::Params { thickness_cm: lease.params.thickness_cm, mfp_cm: lease.params.mfp_cm, absorb_prob: lease.params.absorb_prob };
+        // Any template: run the kernel natively and submit the canonical output bytes.
+        let template = Template::parse(&lease.template).expect("template");
+        let params = lease.params.to_string();
         let jid: [u8; 32] = hex::decode(&lease.job_id).unwrap().try_into().unwrap();
         let seed = hex::decode(&lease.master_seed).unwrap();
         let (index, trials) = (lease.index, lease.trials);
-        let r = tokio::task::spawn_blocking(move || nova_kernel::run_chunk(params, jid, &seed, index, trials)).await.unwrap();
-        let summary = Summary { transmitted: r.transmitted, reflected: r.reflected, absorbed: r.absorbed, histogram: r.histogram };
-        let outcome = c.submit_result(&w, &lease.assignment_id, &r.hash, summary).await.expect("submit");
-        println!("  worker {} chunk {index}: {outcome:?}", &w.payout_addr[8..20]);
+        let t0 = Instant::now();
+        let r = tokio::task::spawn_blocking(move || templates::run_chunk(template, &params, jid, &seed, index, trials)).await.unwrap().expect("kernel");
+        let ms = t0.elapsed().as_millis();
+        let outcome = c.submit_result(&w, &lease.assignment_id, &r.hash, Submission::Output(r.output)).await.expect("submit");
+        println!("  worker {} chunk {index}: {outcome:?} ({ms} ms)", &w.payout_addr[8..20]);
         done += 1;
     }
 }
@@ -56,6 +68,12 @@ async fn main() {
     let chunks = arg("--chunks", 4) as u32;
     let price = arg("--price", 1200);
     let trials = arg("--trials", 10_000) as u32;
+    let (template, params) = match str_arg("--template", "neutron").as_str() {
+        "neutron" | "neutron_slab" => (Template::NeutronSlab, json!({ "thickness_cm": 10.0, "mfp_cm": 3.0, "absorb_prob": 0.18 })),
+        "ising" | "ising_2d" => (Template::Ising2D, json!({ "L": 32, "t_min": 1.5, "t_max": 3.5, "eq_sweeps": 1000, "meas_sweeps": 2000 })),
+        "sir" | "sir_epidemic" => (Template::SirEpidemic, json!({ "population": 10000, "initial_infected": 10, "r0": 2.5, "recovery_days": 7, "runs_per_chunk": 200 })),
+        other => panic!("unknown --template {other} (neutron, ising, sir)"),
+    };
 
     let cfg = Config::from_env().unwrap_or_else(|e| {
         eprintln!("configuration error: {e}\nSet ORACLE_WIF and FEE_WIF (chipnet keys) in the environment or coordinator/.env.");
@@ -79,9 +97,10 @@ async fn main() {
         .create_job(
             &researcher_addr,
             CreateJob {
-                params: JobParams { thickness_cm: 10.0, mfp_cm: 3.0, absorb_prob: 0.18 },
+                template: Some(template.as_str().to_string()),
+                params: params.clone(),
                 chunk_count: chunks,
-                trials_per_chunk: trials,
+                trials_per_chunk: Some(trials),
                 price_per_worker: price,
                 master_seed: None,
                 refund_after: None,
@@ -89,7 +108,7 @@ async fn main() {
         )
         .await
         .expect("create job");
-    println!("job      {}\nescrow   {}\nneeds    {} sats ({chunks} × {})", job.job_id, job.escrow_address, job.total_sats, job.per_chunk_value);
+    println!("template {}\njob      {}\nescrow   {}\nneeds    {} sats ({chunks} × {})", template.as_str(), job.job_id, job.escrow_address, job.total_sats, job.per_chunk_value);
 
     // 2. Fund from FEE_WIF (built and signed in Rust)
     let script = fee.p2pkh_script();
@@ -147,6 +166,23 @@ async fn main() {
     println!("\nmerkle   {}", view.merkle_root.unwrap_or_default());
     println!("op_return {}", link(net, view.op_return_txid.as_deref().unwrap_or("-")));
     let r = c.get_result(&job.job_id).await.unwrap();
-    println!("\nresult   {:.2}% transmitted ± {:.2}% over {} particles", 100.0 * r.transmitted_fraction, 100.0 * r.transmitted_std_error, r.trials);
+    let f = |k: &str| r[k].as_f64().unwrap_or(f64::NAN);
+    match template {
+        Template::NeutronSlab => println!("\nresult   {:.2}% transmitted ± {:.2}% over {} particles", 100.0 * f("transmitted_fraction"), 100.0 * f("transmitted_std_error"), r["trials"]),
+        Template::Ising2D => {
+            println!("\nresult   Tc ≈ {:.3} (where χ peaks; Onsager's exact value 2.269)", f("tc"));
+            for p in r["points"].as_array().into_iter().flatten() {
+                let g = |k: &str| p[k].as_f64().unwrap_or(f64::NAN);
+                println!("         T={:.3}  |m|={:.4}  χ={:.2}  C={:.3}", g("T"), g("m"), g("chi"), g("c"));
+            }
+        }
+        Template::SirEpidemic => println!(
+            "\nresult   P(major outbreak) = {:.3} over {} outbreaks · mean final size of major outbreaks {:.3} · mean peak day {:.1}",
+            f("p_major"),
+            r["runs"],
+            f("major_final_size_mean"),
+            f("mean_peak_day")
+        ),
+    }
     let _ = std::fs::remove_file(&db_path);
 }

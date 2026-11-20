@@ -5,7 +5,11 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use nova_kernel::{HIST_BINS, Params};
+use nova_kernel::{
+    HIST_BINS,
+    templates::{self, Template},
+};
+use serde_json::Value;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
@@ -132,9 +136,15 @@ pub struct JobParams {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateJob {
-    pub params: JobParams,
+    /// "neutron_slab" (default), "ising_2d" or "sir_epidemic".
+    #[serde(default)]
+    pub template: Option<String>,
+    /// Template params (neutron: { thickness_cm, mfp_cm, absorb_prob }).
+    pub params: Value,
     pub chunk_count: u32,
-    pub trials_per_chunk: u32,
+    /// Required for neutron_slab; derived from the params for the other templates.
+    #[serde(default)]
+    pub trials_per_chunk: Option<u32>,
     pub price_per_worker: u64,
     /// Hex; random if omitted.
     pub master_seed: Option<String>,
@@ -167,7 +177,8 @@ pub struct JobView {
     pub job_id: String,
     pub researcher_addr: String,
     pub status: String,
-    pub params: JobParams,
+    pub template: String,
+    pub params: Value,
     pub master_seed: String,
     pub chunk_count: i64,
     pub trials_per_chunk: i64,
@@ -301,9 +312,18 @@ pub struct Lease {
     pub job_id: String,
     pub index: u32,
     pub master_seed: String,
-    pub params: JobParams,
+    pub template: String,
+    pub params: Value,
     pub trials: u32,
     pub deadline: i64,
+}
+
+/// A worker's claimed result for a chunk.
+pub enum Submission {
+    /// neutron_slab: the decoded tallies (the original API).
+    Summary(Summary),
+    /// Any template: the kernel's canonical output bytes.
+    Output(Vec<u8>),
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -350,7 +370,8 @@ struct JobRow {
     id: String,
     researcher_addr: String,
     researcher_pkh: String,
-    params: JobParams,
+    template: Template,
+    params: Value,
     master_seed: String,
     chunk_count: i64,
     trials_per_chunk: i64,
@@ -374,7 +395,11 @@ impl JobRow {
             id: r.get("id"),
             researcher_addr: r.get("researcher_addr"),
             researcher_pkh: r.get("researcher_pkh"),
-            params: JobParams { thickness_cm: r.get("thickness_cm"), mfp_cm: r.get("mfp_cm"), absorb_prob: r.get("absorb_prob") },
+            template: Template::parse(&r.get::<String, _>("template")).unwrap_or(Template::NeutronSlab),
+            params: match r.get::<Option<String>, _>("template_params") {
+                Some(p) => serde_json::from_str(&p).unwrap_or(Value::Null),
+                None => serde_json::json!({ "thickness_cm": r.get::<f64, _>("thickness_cm"), "mfp_cm": r.get::<f64, _>("mfp_cm"), "absorb_prob": r.get::<f64, _>("absorb_prob") }),
+            },
             master_seed: r.get("master_seed"),
             chunk_count: r.get("chunk_count"),
             trials_per_chunk: r.get("trials_per_chunk"),
@@ -397,9 +422,6 @@ impl JobRow {
         hex32(&self.id).expect("stored job id")
     }
 
-    fn kernel_params(&self) -> Params {
-        Params { thickness_cm: self.params.thickness_cm, mfp_cm: self.params.mfp_cm, absorb_prob: self.params.absorb_prob }
-    }
 }
 
 impl Coordinator {
@@ -431,18 +453,33 @@ impl Coordinator {
 
     pub async fn create_job(&self, researcher_addr: &str, req: CreateJob) -> R<JobCreated> {
         let researcher_pkh = decode_p2pkh(researcher_addr, self.prefix()).map_err(|e| bad(format!("researcher address: {e}")))?;
-        let p = Params { thickness_cm: req.params.thickness_cm, mfp_cm: req.params.mfp_cm, absorb_prob: req.params.absorb_prob };
-        p.validate().map_err(|e| bad(e.to_string()))?;
+        let template = Template::parse(req.template.as_deref().unwrap_or("neutron_slab")).map_err(|e| bad(e.to_string()))?;
+        let (min_chunks, max_chunks) = match template {
+            Template::NeutronSlab => (1, 1000),
+            Template::Ising2D => (8, 64),
+            Template::SirEpidemic => (4, 200),
+        };
+        if !(min_chunks..=max_chunks).contains(&req.chunk_count) {
+            return Err(bad(match template {
+                Template::NeutronSlab => "chunk_count must be 1..=1000".to_string(),
+                Template::Ising2D => "the number of temperatures (chunk_count) must be 8..=64".to_string(),
+                Template::SirEpidemic => "chunk_count must be 4..=200".to_string(),
+            }));
+        }
+        let spec = templates::job_spec(template, &req.params, req.chunk_count).map_err(|e| bad(e.to_string()))?;
+        let trials = match (spec.trials, req.trials_per_chunk) {
+            (Some(t), _) => t,
+            (None, Some(t)) => t,
+            (None, None) => return Err(bad("trials_per_chunk is required")),
+        };
+        let p = spec.params;
         if req.price_per_worker < DUST {
             return Err(bad(format!("price_per_worker must be >= {DUST} sats (dust limit)")));
         }
         if req.price_per_worker > 100_000_000 {
             return Err(bad("price_per_worker too large"));
         }
-        if !(1..=1000).contains(&req.chunk_count) {
-            return Err(bad("chunk_count must be 1..=1000"));
-        }
-        if !(1..=5_000_000).contains(&req.trials_per_chunk) {
+        if !(1..=5_000_000).contains(&trials) {
             return Err(bad("trials_per_chunk must be 1..=5,000,000"));
         }
         let master_seed = match req.master_seed {
@@ -460,15 +497,22 @@ impl Coordinator {
             None => ((now_ms() / 1000) + self.settings.default_refund_delay_secs) as u32,
         };
 
-        // config_hash commits to everything a worker computes with, plus pricing.
-        let config = serde_json::json!({
+        // config_hash commits to everything a worker computes with, plus pricing. Neutron jobs
+        // keep exactly the original layout; other templates add the template name.
+        let mut config = serde_json::json!({
             "kernel": "nova-kernel/0.1",
-            "params": { "thickness_cm": p.thickness_cm, "mfp_cm": p.mfp_cm, "absorb_prob": p.absorb_prob },
+            "params": p,
             "chunk_count": req.chunk_count,
-            "trials_per_chunk": req.trials_per_chunk,
+            "trials_per_chunk": trials,
             "master_seed": master_seed,
             "price_per_worker": req.price_per_worker,
         });
+        if template != Template::NeutronSlab {
+            config["template"] = Value::from(template.as_str());
+        }
+        let num = |k: &str| p.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+        let (thickness, mfp, absorb) = (num("thickness_cm"), num("mfp_cm"), num("absorb_prob"));
+        let template_params = (template != Template::NeutronSlab).then(|| p.to_string());
         let config_hash = sha256(config.to_string().as_bytes());
         let mut job_id_pre = config_hash.to_vec();
         job_id_pre.extend_from_slice(&researcher_pkh);
@@ -487,18 +531,19 @@ impl Coordinator {
         let mut tx = self.db.begin().await?;
         sqlx::query(
             "INSERT INTO jobs (id, researcher_addr, researcher_pkh, thickness_cm, mfp_cm, absorb_prob, master_seed, chunk_count, trials_per_chunk,
-             price_per_worker, refund_after, config_hash, escrow_address, locking_bytecode, per_chunk_value, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_funding', ?, ?)",
+             price_per_worker, refund_after, config_hash, escrow_address, locking_bytecode, per_chunk_value, status, created_at, updated_at,
+             template, template_params)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_funding', ?, ?, ?, ?)",
         )
         .bind(hex::encode(job_id))
         .bind(researcher_addr)
         .bind(hex::encode(researcher_pkh))
-        .bind(p.thickness_cm)
-        .bind(p.mfp_cm)
-        .bind(p.absorb_prob)
+        .bind(thickness)
+        .bind(mfp)
+        .bind(absorb)
         .bind(&master_seed)
         .bind(req.chunk_count as i64)
-        .bind(req.trials_per_chunk as i64)
+        .bind(trials as i64)
         .bind(req.price_per_worker as i64)
         .bind(refund_after as i64)
         .bind(hex::encode(config_hash))
@@ -507,6 +552,8 @@ impl Coordinator {
         .bind(per_chunk_value as i64)
         .bind(now)
         .bind(now)
+        .bind(template.as_str())
+        .bind(template_params)
         .execute(&mut *tx)
         .await?;
         for idx in 0..req.chunk_count {
@@ -658,6 +705,7 @@ impl Coordinator {
             job_id: job.id,
             researcher_addr: job.researcher_addr,
             status: job.status,
+            template: job.template.as_str().to_string(),
             params: job.params,
             master_seed: job.master_seed,
             chunk_count: job.chunk_count,
@@ -727,13 +775,82 @@ impl Coordinator {
             .collect())
     }
 
-    pub async fn get_result(&self, job_id: &str) -> R<JobResult> {
+    /// Template-specific aggregate over verified chunks (see docs/api.md).
+    pub async fn get_result(&self, job_id: &str) -> R<Value> {
         let job = self.job(job_id).await?;
         let rows = sqlx::query("SELECT verified_summary FROM chunks WHERE job_id = ? AND verified_summary IS NOT NULL ORDER BY idx").bind(job_id).fetch_all(&self.db).await?;
+        let summaries: Vec<Value> = rows.iter().map(|r| serde_json::from_str(&r.get::<String, _>("verified_summary")).map_err(|e| AppError::Internal(e.to_string()))).collect::<R<_>>()?;
+        let head = serde_json::json!({ "job_id": job.id, "status": job.status, "template": job.template.as_str(), "chunks_verified": summaries.len(), "chunk_count": job.chunk_count });
+        let body = match job.template {
+            Template::NeutronSlab => serde_json::to_value(Self::neutron_result(&job, &summaries)?).unwrap(),
+            Template::Ising2D => Self::ising_result(&summaries),
+            Template::SirEpidemic => Self::sir_result(&summaries),
+        };
+        let mut out = head;
+        for (k, v) in body.as_object().cloned().unwrap_or_default() {
+            out[k] = v;
+        }
+        Ok(out)
+    }
+
+    /// Ising: points sorted by T, Tc where χ peaks, lattice of the chunk nearest Tc.
+    fn ising_result(summaries: &[Value]) -> Value {
+        let f = |s: &Value, k: &str| s[k].as_f64().unwrap_or(f64::NAN);
+        let mut pts: Vec<&Value> = summaries.iter().collect();
+        pts.sort_by(|a, b| f(a, "temperature").total_cmp(&f(b, "temperature")));
+        let peak = pts.iter().max_by(|a, b| f(a, "chi").total_cmp(&f(b, "chi")));
+        let tc = peak.map(|p| f(p, "temperature"));
+        let nearest = tc.and_then(|tc| pts.iter().min_by(|a, b| (f(a, "temperature") - tc).abs().total_cmp(&(f(b, "temperature") - tc).abs())));
+        serde_json::json!({
+            "points": pts.iter().map(|s| serde_json::json!({ "T": f(s, "temperature"), "m": f(s, "abs_m"), "e": f(s, "e"), "chi": f(s, "chi"), "c": f(s, "c") })).collect::<Vec<_>>(),
+            "tc": tc,
+            "tc_theory": 2.0 / (1.0 + 2f64.sqrt()).ln(),
+            "lattice": nearest.map(|s| serde_json::json!({ "T": f(s, "temperature"), "L": s["L"], "bits": s["lattice"] })),
+        })
+    }
+
+    /// SIR: merged histograms, P(major outbreak), mean peak day, a few sample curves.
+    fn sir_result(summaries: &[Value]) -> Value {
+        let mut final_hist = vec![0u64; 64];
+        let mut peak_hist = vec![0u64; 64];
+        let (mut runs, mut majors, mut peak_days) = (0u64, 0u64, 0f64);
+        for s in summaries {
+            for (h, v) in final_hist.iter_mut().zip(s["final_size_hist"].as_array().into_iter().flatten()) {
+                *h += v.as_u64().unwrap_or(0);
+            }
+            for (h, v) in peak_hist.iter_mut().zip(s["peak_hist"].as_array().into_iter().flatten()) {
+                *h += v.as_u64().unwrap_or(0);
+            }
+            runs += s["runs"].as_u64().unwrap_or(0);
+            majors += s["major_outbreaks"].as_u64().unwrap_or(0);
+            peak_days += s["sum_peak_days"].as_f64().unwrap_or(0.0);
+        }
+        // Mean final size of major outbreaks from bin centres (bins are 1/64 wide).
+        let (mut n, mut sum) = (0u64, 0f64);
+        for (b, c) in final_hist.iter().enumerate() {
+            let centre = (b as f64 + 0.5) / 64.0;
+            if centre > 0.10 {
+                n += c;
+                sum += *c as f64 * centre;
+            }
+        }
+        serde_json::json!({
+            "runs": runs,
+            "final_size_hist": final_hist,
+            "peak_hist": peak_hist,
+            "major_outbreaks": majors,
+            "p_major": if runs > 0 { majors as f64 / runs as f64 } else { 0.0 },
+            "mean_peak_day": if runs > 0 { peak_days / runs as f64 } else { 0.0 },
+            "major_final_size_mean": if n > 0 { Value::from(sum / n as f64) } else { Value::Null },
+            "sample_curves": summaries.iter().take(5).map(|s| s["curve"].clone()).collect::<Vec<_>>(),
+        })
+    }
+
+    fn neutron_result(job: &JobRow, summaries: &[Value]) -> R<JobResult> {
         let mut res = JobResult {
             job_id: job.id.clone(),
             status: job.status.clone(),
-            chunks_verified: rows.len() as i64,
+            chunks_verified: summaries.len() as i64,
             chunk_count: job.chunk_count,
             trials: 0,
             transmitted: 0,
@@ -743,8 +860,8 @@ impl Coordinator {
             transmitted_std_error: 0.0,
             histogram: vec![0; HIST_BINS],
         };
-        for r in rows {
-            let s: Summary = serde_json::from_str(&r.get::<String, _>("verified_summary")).map_err(|e| AppError::Internal(e.to_string()))?;
+        for v in summaries {
+            let s: Summary = serde_json::from_value(v.clone()).map_err(|e| AppError::Internal(e.to_string()))?;
             res.transmitted += s.transmitted as u64;
             res.reflected += s.reflected as u64;
             res.absorbed += s.absorbed as u64;
@@ -882,6 +999,7 @@ impl Coordinator {
             job_id: job.id.clone(),
             index: r.get::<i64, _>("idx") as u32,
             master_seed: job.master_seed.clone(),
+            template: job.template.as_str().to_string(),
             params: job.params.clone(),
             trials: job.trials_per_chunk as u32,
             deadline: r.get("deadline"),
@@ -936,7 +1054,46 @@ impl Coordinator {
 
     // ------------------------------------------------------------ verification
 
-    pub async fn submit_result(&self, w: &Worker, assignment_id: &str, hash: &str, summary: Summary) -> R<SubmitOutcome> {
+    /// Checks a claimed result against its hash and the job, returning the summary JSON to store
+    /// (the decoded output). Neutron summaries must sum to `trials`; Ising outputs must be for this
+    /// chunk's temperature; SIR outputs must contain exactly `trials` outbreaks.
+    fn check_submission(job: &JobRow, idx: u32, claimed: &[u8; 32], submission: Submission) -> R<String> {
+        let output = match submission {
+            Submission::Summary(s) => {
+                if job.template != Template::NeutronSlab {
+                    return Err(bad(format!("{} results must be submitted as `output` (hex)", job.template.as_str())));
+                }
+                if s.histogram.len() != HIST_BINS {
+                    return Err(bad(format!("histogram must have {HIST_BINS} bins")));
+                }
+                s.output_bytes()
+            }
+            Submission::Output(o) => o,
+        };
+        if templates::output_hash(&job.job_id(), idx, &output) != hex::encode(claimed) {
+            return Err(bad("hash does not match the submitted result"));
+        }
+        let decoded = templates::decode_output(job.template, &job.params, &output).map_err(|e| bad(e.to_string()))?;
+        let trials = job.trials_per_chunk as u64;
+        let ok = match job.template {
+            Template::NeutronSlab => ["transmitted", "reflected", "absorbed"].iter().map(|k| decoded[k].as_u64().unwrap_or(0)).sum::<u64>() == trials,
+            Template::Ising2D => {
+                let p = templates::IsingParams::from_value(&job.params).map_err(|e| AppError::Internal(e.to_string()))?;
+                decoded["temperature"].as_f64().map(f64::to_bits) == Some(p.temperature(idx).to_bits())
+            }
+            Template::SirEpidemic => decoded["runs"].as_u64() == Some(trials),
+        };
+        if !ok {
+            return Err(bad(match job.template {
+                Template::NeutronSlab => "counts must sum to trials",
+                Template::Ising2D => "result is for a different temperature than this chunk",
+                Template::SirEpidemic => "result must contain exactly `trials` outbreaks",
+            }));
+        }
+        Ok(decoded.to_string())
+    }
+
+    pub async fn submit_result(&self, w: &Worker, assignment_id: &str, hash: &str, submission: Submission) -> R<SubmitOutcome> {
         let _g = self.lock.lock().await;
         let a = sqlx::query("SELECT * FROM assignments WHERE id = ?").bind(assignment_id).fetch_optional(&self.db).await?.ok_or(AppError::NotFound("assignment"))?;
         if a.get::<String, _>("worker_id") != w.id {
@@ -957,19 +1114,10 @@ impl Coordinator {
         let attempt: i64 = a.get("attempt");
         let job = self.job(&job_id).await?;
 
-        // The summary must reproduce the hash, so aggregated results are as trustworthy as the hash.
-        if summary.histogram.len() != HIST_BINS {
-            return Err(bad(format!("histogram must have {HIST_BINS} bins")));
-        }
-        let total = summary.transmitted as u64 + summary.reflected as u64 + summary.absorbed as u64;
-        if total != job.trials_per_chunk as u64 {
-            return Err(bad("counts must sum to trials"));
-        }
+        // The result must reproduce the hash, so aggregated results are as trustworthy as the hash.
         let hash = hash.to_ascii_lowercase();
         let claimed = hex32(&hash)?;
-        if summary.chunk_hash(&job.job_id(), idx as u32) != claimed {
-            return Err(bad("hash does not match summary"));
-        }
+        let summary_json = Self::check_submission(&job, idx as u32, &claimed, submission)?;
 
         sqlx::query("UPDATE assignments SET status = 'submitted' WHERE id = ?").bind(assignment_id).execute(&self.db).await?;
         sqlx::query("INSERT INTO results (assignment_id, job_id, idx, attempt, worker_id, payout_pkh, hash, summary, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -980,7 +1128,7 @@ impl Coordinator {
             .bind(&w.id)
             .bind(&w.payout_pkh)
             .bind(&hash)
-            .bind(serde_json::to_string(&summary).unwrap())
+            .bind(&summary_json)
             .bind(now)
             .execute(&self.db)
             .await?;
@@ -1022,9 +1170,12 @@ impl Coordinator {
     /// (distinct-address) workers whose submissions match. The contract needs two different
     /// payees: with one match, the coordinator's fee wallet takes the second share.
     async fn resolve_by_coordinator(&self, job: &JobRow, idx: i64) -> R<()> {
-        let (params, job_id, seed, trials) = (job.kernel_params(), job.job_id(), hex::decode(&job.master_seed).unwrap(), job.trials_per_chunk as u32);
-        let r = tokio::task::spawn_blocking(move || nova_kernel::run_chunk(params, job_id, &seed, idx as u32, trials)).await.map_err(|e| AppError::Internal(e.to_string()))?;
-        let summary = Summary { transmitted: r.transmitted, reflected: r.reflected, absorbed: r.absorbed, histogram: r.histogram.clone() };
+        let (template, params, job_id, seed, trials) = (job.template, job.params.to_string(), job.job_id(), hex::decode(&job.master_seed).unwrap(), job.trials_per_chunk as u32);
+        let r = tokio::task::spawn_blocking(move || templates::run_chunk(template, &params, job_id, &seed, idx as u32, trials))
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let summary_json = templates::decode_output(job.template, &job.params, &r.output).map_err(|e| AppError::Internal(e.to_string()))?.to_string();
         tracing::warn!(job = %job.id, idx, hash = %r.hash, "chunk resolved by coordinator");
 
         let matching = sqlx::query("SELECT worker_id, payout_pkh FROM results WHERE job_id = ? AND idx = ? AND hash = ? ORDER BY submitted_at, rowid")
@@ -1041,7 +1192,6 @@ impl Coordinator {
             }
         }
         sqlx::query("UPDATE results SET outcome = 'coordinator_matched' WHERE job_id = ? AND idx = ? AND hash = ?").bind(&job.id).bind(idx).bind(&r.hash).execute(&self.db).await?;
-        let summary_json = serde_json::to_string(&summary).unwrap();
         let fee_pkh = hex::encode(self.settings.fee.pkh());
         match payees.len() {
             0 => {

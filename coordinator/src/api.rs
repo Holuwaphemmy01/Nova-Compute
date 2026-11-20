@@ -12,7 +12,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::service::{AppError, Coordinator, CreateJob, Summary, Worker};
+use crate::service::{AppError, Coordinator, CreateJob, Submission, Summary, Worker};
 
 type AppState = Arc<Coordinator>;
 
@@ -175,10 +175,18 @@ async fn work_next(State(c): State<AppState>, AuthWorker(w): AuthWorker) -> Resu
 #[derive(Deserialize)]
 struct ResultReq {
     hash: String,
-    summary: Summary,
+    /// neutron_slab: decoded tallies (original API).
+    summary: Option<Summary>,
+    /// Any template: canonical output bytes as hex.
+    output: Option<String>,
 }
 
 async fn work_result(State(c): State<AppState>, AuthWorker(w): AuthWorker, Path(assignment_id): Path<String>, Json(b): Json<ResultReq>) -> Result<impl IntoResponse, AppError> {
-    let outcome = c.submit_result(&w, &assignment_id, &b.hash, b.summary).await?;
+    let submission = match (b.summary, b.output) {
+        (_, Some(hex_out)) => Submission::Output(hex::decode(hex_out.trim()).map_err(|_| AppError::BadRequest("output must be hex".into()))?),
+        (Some(s), None) => Submission::Summary(s),
+        (None, None) => return Err(AppError::BadRequest("send `output` (hex) or `summary`".into())),
+    };
+    let outcome = c.submit_result(&w, &assignment_id, &b.hash, submission).await?;
     Ok(Json(json!({ "status": outcome })))
 }

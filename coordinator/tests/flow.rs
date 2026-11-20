@@ -441,3 +441,158 @@ async fn fund_with_raw_tx_checks_before_broadcasting_then_records() {
     let (_, chunks) = env.call("GET", &format!("/api/v1/jobs/{id}/chunks"), None, None).await;
     assert_eq!(chunks[lease["index"].as_u64().unwrap() as usize]["active_leases"], 1);
 }
+
+// ---------------------------------------------------------------- templates
+
+impl Env {
+    /// Creates a template job and funds it with a fake on-chain funding tx.
+    async fn funded_template_job(&self, template: &str, params: Value, chunks: u32) -> Value {
+        let (s, job) = self
+            .call("POST", "/api/v1/jobs", None, Some(json!({ "template": template, "params": params, "chunk_count": chunks, "price_per_worker": 1200, "master_seed": hex::encode(b"0xNOVA2026") })))
+            .await;
+        assert_eq!(s, 201, "{job}");
+        let lb = hex::decode(job["locking_bytecode"].as_str().unwrap()).unwrap();
+        let funding = Transaction {
+            version: 2,
+            inputs: vec![TxIn { outpoint: OutPoint { txid: sha256(template.as_bytes()), vout: 0 }, unlocking_bytecode: vec![], sequence: 0 }],
+            outputs: (0..chunks).map(|_| TxOut { value: 3000, locking_bytecode: lb.clone() }).collect(),
+            locktime: 0,
+        };
+        self.chain.add_confirmed(&funding);
+        let (s, v) = self.call("POST", &format!("/api/v1/jobs/{}/funded", job["job_id"].as_str().unwrap()), None, Some(json!({ "txid": funding.txid_hex() }))).await;
+        assert_eq!(s, 200, "{v}");
+        assert_eq!(v["template"], template);
+        v
+    }
+
+    async fn submit_output(&self, token: &str, lease: &Value, hash: &str, output: &[u8]) -> (u16, Value) {
+        self.call("POST", &format!("/api/v1/work/{}/result", lease["assignment_id"].as_str().unwrap()), Some(token), Some(json!({ "hash": hash, "output": hex::encode(output) }))).await
+    }
+}
+
+/// What an honest browser worker does for any template.
+fn compute_template(lease: &Value) -> nova_kernel::templates::TemplateOutput {
+    nova_kernel::templates::run_chunk(
+        nova_kernel::templates::Template::parse(lease["template"].as_str().unwrap()).unwrap(),
+        &lease["params"].to_string(),
+        hex::decode(lease["job_id"].as_str().unwrap()).unwrap().try_into().unwrap(),
+        &hex::decode(lease["master_seed"].as_str().unwrap()).unwrap(),
+        lease["index"].as_u64().unwrap() as u32,
+        lease["trials"].as_u64().unwrap() as u32,
+    )
+    .unwrap()
+}
+
+/// Two honest workers compute every chunk; then payouts + OP_RETURN, checked like the neutron test.
+async fn run_template_job(env: &Env, template: &str, params: Value, chunks: u32) -> Value {
+    let job = env.funded_template_job(template, params, chunks).await;
+    let (t1, k1) = env.worker(&format!("test/{template}/w1")).await;
+    let (t2, k2) = env.worker(&format!("test/{template}/w2")).await;
+    let mut idle = 0;
+    while idle < 2 {
+        idle = 0;
+        for t in [&t1, &t2] {
+            match env.next(t).await {
+                Some(lease) => {
+                    assert_eq!(lease["template"], template);
+                    let out = compute_template(&lease);
+                    let (code, v) = env.submit_output(t, &lease, &out.hash, &out.output).await;
+                    assert_eq!(code, 200, "{v}");
+                }
+                None => idle += 1,
+            }
+        }
+    }
+    assert_eq!(env.coord.process_payouts_once().await.unwrap(), chunks as usize);
+    assert_eq!(env.coord.finalize_ready_jobs().await.unwrap().len(), 1);
+    let txs: Vec<Transaction> = env.chain.broadcasts().iter().map(|h| Transaction::parse_hex(h).unwrap()).collect();
+    assert_eq!(txs.len(), chunks as usize + 1, "payouts + OP_RETURN");
+    let escrow = escrow_from_job(env, &job);
+    for tx in &txs[..chunks as usize] {
+        check_payout_tx(&escrow, tx, &[3000]).expect("payout satisfies the contract rules");
+        let payees = [tx.outputs[0].locking_bytecode.clone(), tx.outputs[1].locking_bytecode.clone()];
+        assert!(payees.contains(&p2pkh(&k1.pkh())) && payees.contains(&p2pkh(&k2.pkh())));
+    }
+    let (_, proof) = env.call("GET", &format!("/api/v1/jobs/{}/proof", job["job_id"].as_str().unwrap()), None, None).await;
+    let leaves: Vec<[u8; 32]> = proof["leaves"].as_array().unwrap().iter().map(|l| hex::decode(l["hash"].as_str().unwrap()).unwrap().try_into().unwrap()).collect();
+    assert_eq!(leaves.len(), chunks as usize);
+    assert_eq!(txs[chunks as usize].outputs[0].locking_bytecode, op_return_script(&escrow.params.job_id, &merkle_root(&leaves).unwrap()));
+    job
+}
+
+#[tokio::test]
+async fn ising_job_end_to_end() {
+    let env = env().await;
+    let params = json!({ "L": 16, "t_min": 1.5, "t_max": 3.5, "eq_sweeps": 100, "meas_sweeps": 200 });
+    let job = run_template_job(&env, "ising_2d", params, 8).await;
+    assert_eq!(job["params"]["n_temps"], 8, "n_temps = chunk count");
+    assert_eq!(job["trials_per_chunk"], 200, "trials = meas_sweeps");
+    let (_, r) = env.call("GET", &format!("/api/v1/jobs/{}/result", job["job_id"].as_str().unwrap()), None, None).await;
+    assert_eq!(r["template"], "ising_2d");
+    assert_eq!(r["status"], "complete");
+    let pts = r["points"].as_array().unwrap();
+    assert_eq!(pts.len(), 8);
+    let ts: Vec<f64> = pts.iter().map(|p| p["T"].as_f64().unwrap()).collect();
+    assert!(ts.windows(2).all(|w| w[0] < w[1]), "sorted by T: {ts:?}");
+    assert!((ts[0] - 1.5).abs() < 1e-12 && (ts[7] - 3.5).abs() < 1e-12);
+    assert!(pts[0]["m"].as_f64().unwrap() > 0.9 && pts[7]["m"].as_f64().unwrap() < 0.4, "ordered to disordered: {pts:?}");
+    let tc = r["tc"].as_f64().unwrap();
+    assert!((1.9..=2.7).contains(&tc), "chi peaks near the transition: {tc}");
+    assert_eq!(r["lattice"]["L"], 16);
+    assert_eq!(r["lattice"]["bits"].as_str().unwrap().len(), 16 * 16 / 8 * 2);
+    assert!((r["tc_theory"].as_f64().unwrap() - 2.269185).abs() < 1e-5);
+}
+
+#[tokio::test]
+async fn sir_job_end_to_end() {
+    let env = env().await;
+    let params = json!({ "population": 1000, "initial_infected": 5, "r0": 3.0, "recovery_days": 7, "runs_per_chunk": 30 });
+    let job = run_template_job(&env, "sir_epidemic", params, 4).await;
+    assert_eq!(job["trials_per_chunk"], 30, "trials = runs_per_chunk");
+    let (_, r) = env.call("GET", &format!("/api/v1/jobs/{}/result", job["job_id"].as_str().unwrap()), None, None).await;
+    assert_eq!(r["template"], "sir_epidemic");
+    assert_eq!(r["runs"], 120);
+    assert_eq!(r["final_size_hist"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).sum::<u64>(), 120);
+    let p = r["p_major"].as_f64().unwrap();
+    assert!(p > 0.8, "r0=3 with 5 initial cases: most runs take off ({p})");
+    let fs = r["major_final_size_mean"].as_f64().unwrap();
+    assert!((0.9..=0.97).contains(&fs), "final size near 0.94: {fs}");
+    assert!(r["mean_peak_day"].as_f64().unwrap() > 0.0);
+    assert_eq!(r["sample_curves"].as_array().unwrap().len(), 4);
+    assert_eq!(r["sample_curves"][0].as_array().unwrap().len(), 180);
+}
+
+#[tokio::test]
+async fn template_results_are_checked_before_acceptance() {
+    let env = env().await;
+    env.funded_template_job("ising_2d", json!({ "L": 16, "eq_sweeps": 10, "meas_sweeps": 20 }), 8).await;
+    let (t, _) = env.worker("test/check").await;
+    let lease = env.next(&t).await.unwrap();
+    let good = compute_template(&lease);
+    // Output that does not match the claimed hash.
+    let mut tampered = good.output.clone();
+    tampered[8] ^= 1;
+    let (code, v) = env.submit_output(&t, &lease, &good.hash, &tampered).await;
+    assert_eq!(code, 400, "{v}");
+    // A self-consistent result computed for another temperature (another chunk index).
+    let mut other = lease.clone();
+    other["index"] = json!((lease["index"].as_u64().unwrap() + 1) % 8);
+    let wrong = compute_template(&other);
+    let jid: [u8; 32] = hex::decode(lease["job_id"].as_str().unwrap()).unwrap().try_into().unwrap();
+    let wrong_hash = nova_kernel::templates::output_hash(&jid, lease["index"].as_u64().unwrap() as u32, &wrong.output);
+    let (code, v) = env.submit_output(&t, &lease, &wrong_hash, &wrong.output).await;
+    assert_eq!(code, 400, "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("different temperature"), "{v}");
+    // Neutron-style summaries are refused for template jobs; the honest output is accepted.
+    let summary = json!({ "transmitted": 0, "reflected": 0, "absorbed": 0, "histogram": vec![0; 64] });
+    let (code, _) = env.call("POST", &format!("/api/v1/work/{}/result", lease["assignment_id"].as_str().unwrap()), Some(&t), Some(json!({ "hash": good.hash, "summary": summary }))).await;
+    assert_eq!(code, 400);
+    let (code, v) = env.submit_output(&t, &lease, &good.hash, &good.output).await;
+    assert_eq!(code, 200, "{v}");
+
+    // Per-template chunk limits and param validation.
+    let (code, _) = env.call("POST", "/api/v1/jobs", None, Some(json!({ "template": "ising_2d", "params": {}, "chunk_count": 4, "price_per_worker": 1200 }))).await;
+    assert_eq!(code, 400, "Ising needs 8..=64 temperatures");
+    let (code, _) = env.call("POST", "/api/v1/jobs", None, Some(json!({ "template": "sir_epidemic", "params": { "r0": 9 }, "chunk_count": 4, "price_per_worker": 1200 }))).await;
+    assert_eq!(code, 400, "r0 out of range");
+}
