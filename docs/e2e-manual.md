@@ -152,6 +152,75 @@ docs say Paytaca does.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
+## Chipnet runs: Ising and SIR templates (2026-11-20)
+
+Run with the scripted coordinator e2e (two workers, price 1,200 sats per piece):
+
+```
+cargo run -p nova-coordinator --bin e2e -- --template ising --chunks 8 --price 1200
+cargo run -p nova-coordinator --bin e2e -- --template sir --chunks 4 --price 1200
+```
+
+Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
+
+### Ising 2D, 8 temperatures
+
+Params: `L=32, t_min=1.5, t_max=3.5, eq_sweeps=1000, meas_sweeps=2000`.
+Job `3b50412120316f8fed82fe52774f7457e578a21c370d7ef05657b8c4c3b90cb7`, escrow
+`bchtest:pdhvwh6rctx88ve85r538ujqhv5gqrpjz2jrmgzfez658zh646rewhxverd3e`, 8 × 3,000 sats.
+
+| Step | Txid |
+|---|---|
+| Funding | [aecab2520f17…de2e](https://chipnet.imaginary.cash/tx/aecab2520f1718fd7b883a421c9fddcf740a9e2ea35a59a166f0e5893045de2e) |
+| Payout T=1.500 | [c8602100ab57…7b31](https://chipnet.imaginary.cash/tx/c8602100ab57e6783f0d3ffb859a907298209308408968dfe03c2a99fd347b31) |
+| Payout T=1.786 | [229eeac1331e…72a0](https://chipnet.imaginary.cash/tx/229eeac1331ef358bc8004b11bd200b8d0d33d8fbf00e427ebd9afc0207972a0) |
+| Payout T=2.071 | [4cdd6a765e4d…3d47](https://chipnet.imaginary.cash/tx/4cdd6a765e4d2dda28029bfdc2bd72bad44f9d7c4a7704d9326b0faa513c3d47) |
+| Payout T=2.357 | [3c2989166245…3646](https://chipnet.imaginary.cash/tx/3c298916624d62547f32d7a644eaedea801fe9e2515014de5a895329f8823646) |
+| Payout T=2.643 | [8fb760c974b1…aa33](https://chipnet.imaginary.cash/tx/8fb760c974b1bb56777a4fa127e435fc85632a353ea21d1faab9e709dc02aa33) |
+| Payout T=2.929 | [5ffadb5ec298…ec8c](https://chipnet.imaginary.cash/tx/5ffadb5ec298baeecb9a4ac7c2a345b237966ddbcb895f6f70efd100ada9ec8c) |
+| Payout T=3.214 | [cff54e73bb96…f2b9](https://chipnet.imaginary.cash/tx/cff54e73bb9623b32025e79de1f668ed36df9246277ccc536c3c47ff8d14f2b9) |
+| Payout T=3.500 | [804deee95609…e39d](https://chipnet.imaginary.cash/tx/804deee95609d124a6fb73e48c6e72ff2d1a138a09f6ccc3580c8300cef1e39d) |
+| OP_RETURN (Merkle `4c4ed740…3e22`) | [96b9259581a7…18cb](https://chipnet.imaginary.cash/tx/96b9259581a7c3dffc81d788217ba882578bfa4dcc6904a78d6cd4003d6818cb) |
+
+| T | ⟨\|m\|⟩ | χ | C |
+|---|---|---|---|
+| 1.500 | 0.9863 | 0.03 | 0.207 |
+| 1.786 | 0.9584 | 0.11 | 0.433 |
+| 2.071 | 0.8832 | 0.54 | 0.837 |
+| 2.357 | 0.4631 | 20.20 | 1.897 |
+| 2.643 | 0.1357 | 3.94 | 0.702 |
+| 2.929 | 0.0894 | 1.55 | 0.400 |
+| 3.214 | 0.0714 | 0.91 | 0.302 |
+| 3.500 | 0.0610 | 0.66 | 0.236 |
+
+Estimated Tc ≈ 2.357 (χ peak on the 8-point grid; Onsager's exact value is 2.269, and the grid
+spacing is 0.286, so the nearest grid point to 2.269 is 2.357).
+
+### SIR epidemic, 4 pieces
+
+Params: `population=10000, initial_infected=10, r0=2.5, recovery_days=7, runs_per_chunk=200`.
+Job `89eca0b8f67612a1092928cf731d4eae700577871abf3f873a5bac5fda073647`, escrow
+`bchtest:pd06r6mncth5w07hv9vqqtkrgwytjkddng7ja2g2ueaw0n7anr49vkqv73nms`, 4 × 3,000 sats.
+
+| Step | Txid |
+|---|---|
+| Funding | [6e39a87c7610…74c2](https://chipnet.imaginary.cash/tx/6e39a87c761031bfa39b1d765852f7be39d99bbe8413053580cc4fb0f21c74c2) |
+| Payout piece 0 | [6cba4e99b0a3…30d4](https://chipnet.imaginary.cash/tx/6cba4e99b0a3d661a07ac125dad1ce224befa4da5a13dc43becdf387bfed30d4) |
+| Payout piece 1 | [3b6ffd0b5648…5c70](https://chipnet.imaginary.cash/tx/3b6ffd0b5648c640d4f3103657bfeaa06b53550baf6f7fff82ec0298fed35c70) |
+| Payout piece 2 | [526e6be6e0ba…a3de](https://chipnet.imaginary.cash/tx/526e6be6e0ba554d54e443641218bb6c329ea5f2c8124cd5a57f532f1109a3de) |
+| Payout piece 3 | [7a54113aa548…dea5](https://chipnet.imaginary.cash/tx/7a54113aa54835f3ec9412fb8f5387a78b8fb0865f45d4079d2b3fb549c5dea5) |
+| OP_RETURN (Merkle `5776215f…19a6`) | [a75e1044578c…9bed](https://chipnet.imaginary.cash/tx/a75e1044578c54c4ea3eee831067dbc2e747c081cc4a338453a3413983869bed) |
+
+Result over 800 outbreaks: P(major outbreak) = 1.000, mean final size of major outbreaks 0.893
+(theory for R0 = 2.5: 0.893), mean peak day 34.5.
+
+### Timing per piece
+
+| Template | Native worker (incl. lease + submit round trip) | WASM in Node, compute only |
+|---|---|---|
+| Ising, L=32, 3,000 sweeps | 1.1–2.9 s | 115–127 ms |
+| SIR, 200 outbreaks, N=10,000 | 2.8–3.8 s | 349–399 ms |
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
