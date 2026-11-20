@@ -67,3 +67,40 @@ fn simulator_matches_golden() {
     assert_eq!(result.hash, common::GOLDEN);
     assert_eq!(result, common::golden());
 }
+
+#[wasm_bindgen_test]
+fn template_goldens() {
+    common::check_template_goldens();
+}
+
+#[wasm_bindgen_test]
+fn neutron_golden_unchanged_through_dispatcher() {
+    common::check_neutron_via_dispatcher();
+}
+
+#[wasm_bindgen_test]
+fn template_streaming_matches_run_chunk() {
+    common::check_template_streaming_matches_run_chunk();
+}
+
+#[wasm_bindgen_test]
+fn template_inputs_change_hash() {
+    common::check_template_inputs_change_hash();
+}
+
+/// The JS-facing TemplateSimulator hits the same goldens.
+#[wasm_bindgen_test]
+fn template_simulator_matches_goldens() {
+    use nova_kernel::TemplateSimulator;
+    for (t, params, index, trials, golden) in [
+        ("ising_2d", common::ising_params(), common::ISING_INDEX, common::ISING_TRIALS, common::GOLDEN_ISING),
+        ("sir_epidemic", common::sir_params(), common::SIR_INDEX, common::SIR_TRIALS, common::GOLDEN_SIR),
+    ] {
+        let mut sim = TemplateSimulator::new(t, &params.to_string(), &to_hex(&common::GOLDEN_JOB_ID), &to_hex(common::GOLDEN_SEED), index, trials).unwrap();
+        while sim.done() < sim.total() {
+            sim.step(13).unwrap();
+        }
+        let r: serde_json::Value = serde_wasm_bindgen::from_value(sim.finish().unwrap()).unwrap();
+        assert_eq!(r["hash"], golden, "{t}");
+    }
+}

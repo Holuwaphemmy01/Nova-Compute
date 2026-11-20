@@ -28,8 +28,18 @@ use rand_core::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod templates;
 mod wasm;
-pub use wasm::Simulator;
+pub use wasm::{Simulator, TemplateSimulator};
+
+/// The chunk hash every template shares: `sha256(job_id ‖ index u32 BE ‖ output_bytes)`, hex.
+pub fn chunk_hash(job_id: &[u8; 32], index: u32, output: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(job_id);
+    h.update(index.to_be_bytes());
+    h.update(output);
+    to_hex(&h.finalize())
+}
 
 /// Number of bins in the collision-depth histogram over `[0, L)`.
 pub const HIST_BINS: usize = 64;
@@ -133,7 +143,7 @@ pub fn chunk_seed(master_seed: &[u8], index: u32) -> [u8; 32] {
 
 /// Uniform `f64` in `[0, 1)` from the top 53 bits of one `u64`.
 #[inline]
-fn uniform(rng: &mut ChaCha8Rng) -> f64 {
+pub(crate) fn uniform(rng: &mut ChaCha8Rng) -> f64 {
     (rng.next_u64() >> 11) as f64 * (1.0 / 9007199254740992.0)
 }
 
@@ -207,16 +217,12 @@ impl Chunk {
         while !self.is_done() {
             self.step(u32::MAX, 0);
         }
-        let mut h = Sha256::new();
-        h.update(self.job_id);
-        h.update(self.index.to_be_bytes());
-        h.update(self.output_bytes());
         ChunkResult {
             transmitted: self.transmitted,
             reflected: self.reflected,
             absorbed: self.absorbed,
             histogram: self.histogram.to_vec(),
-            hash: to_hex(&h.finalize()),
+            hash: chunk_hash(&self.job_id, self.index, &self.output_bytes()),
         }
     }
 
