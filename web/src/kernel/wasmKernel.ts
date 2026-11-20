@@ -5,7 +5,7 @@
  */
 import type { ToWorker } from "./sim.worker";
 import type { RunOptions, SimKernel, SimParams, SimProgress, SimResult } from "./types";
-import type { ChunkJob, ChunkOutput, ChunkProgress } from "./wasmRun";
+import type { ChunkJob, ChunkOutput, ChunkProgress, Pacing } from "./wasmRun";
 
 export const KERNEL_NAME = "Rust kernel (WebAssembly)";
 
@@ -26,7 +26,7 @@ const abortError = () => new DOMException("Simulation cancelled", "AbortError");
 export const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
 
 export interface WasmKernel extends SimKernel {
-  runChunk(job: ChunkJob, opts?: { onProgress?: (p: ChunkProgress) => void; signal?: AbortSignal }): Promise<ChunkOutput>;
+  runChunk(job: ChunkJob, opts?: { onProgress?: (p: ChunkProgress) => void; signal?: AbortSignal; pace?: Pacing }): Promise<ChunkOutput>;
   selfTest(): Promise<{ ok: boolean; hash: string; ms: number }>;
   dispose(): void;
 }
@@ -81,7 +81,7 @@ export function createWasmKernel(): WasmKernel {
       return request<SimResult>((id) => ({ type: "run", id, params }), options.onProgress as (p: SimProgress) => void, options.signal);
     },
     runChunk(job, opts = {}) {
-      return request<ChunkOutput>((id) => ({ type: "chunk", id, job }), opts.onProgress, opts.signal);
+      return request<ChunkOutput>((id) => ({ type: "chunk", id, job, pace: opts.pace }), opts.onProgress, opts.signal);
     },
     selfTest() {
       return request((id) => ({ type: "selftest", id }));

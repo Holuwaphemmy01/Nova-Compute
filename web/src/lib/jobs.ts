@@ -1,6 +1,7 @@
 import type { Chunk, Job } from "../api/client";
+import { templateTitle } from "./templates";
 
-export const jobTitle = (j: Pick<Job, "params">) => `Particles through a ${j.params.thickness_cm} cm wall`;
+export const jobTitle = (j: Pick<Job, "params"> & { template?: string }) => templateTitle(j.template, j.params);
 
 /** How a chunk is shown in the Live job grid. */
 export type ChunkDisplay = "queued" | "running" | "verified" | "retrying" | "unpaid";

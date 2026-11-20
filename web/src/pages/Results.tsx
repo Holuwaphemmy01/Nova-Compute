@@ -9,6 +9,7 @@ import { jobTitle, merkleRoot } from "../lib/jobs";
 import { fmt } from "../lib/random";
 import { usePoll } from "../lib/usePoll";
 import { ClosePanel } from "../wallet/ClosePanel";
+import { TemplateResult } from "../components/templateViews";
 
 type Check = { phase: "idle" } | { phase: "checking"; step: string } | { phase: "ok"; root: string } | { phase: "fail"; reason: string };
 
@@ -39,8 +40,9 @@ export default function Results() {
     );
   }
 
-  const pct = (v: number) => (r.trials ? (100 * v) / r.trials : 0);
-  const [tPct, rPct, aPct] = [pct(r.transmitted), pct(r.reflected), pct(r.absorbed)];
+  const neutron = "trials" in r ? r : null;
+  const pct = (v: number) => (neutron?.trials ? (100 * v) / neutron.trials : 0);
+  const [tPct, rPct, aPct] = neutron ? [pct(neutron.transmitted), pct(neutron.reflected), pct(neutron.absorbed)] : [0, 0, 0];
   const paid = j.progress.paid * 2 * j.price_per_worker;
   const done = j.status === "complete";
 
@@ -81,13 +83,16 @@ export default function Results() {
         <h1 style={{ margin: 0, fontSize: 36, fontWeight: 700, letterSpacing: "-0.04em" }}>{jobTitle(j)}</h1>
       </div>
 
+      {!neutron ? (
+        <TemplateResult result={r} job={j} />
+      ) : (
       <section className="in d1" style={{ borderRadius: 28, background: "var(--mint)", padding: 36, display: "flex", flexDirection: "column", gap: 22 }}>
         <span style={{ fontSize: 16, color: "var(--mint-ink)" }}>Share of particles that got through</span>
         <span className="num tnum" style={{ fontSize: "clamp(64px, 12vw, 112px)", fontWeight: 700, lineHeight: 0.95, letterSpacing: "-0.06em" }}>
-          {r.trials ? `${tPct.toFixed(1)}%` : "—"}
+          {neutron.trials ? `${tPct.toFixed(1)}%` : "—"}
         </span>
         <span className="mono" style={{ fontSize: 15, color: "var(--mint-ink)" }}>
-          ± {(r.transmitted_std_error * 100).toFixed(2)}% · from {fmt(r.trials)} particles
+          ± {(neutron.transmitted_std_error * 100).toFixed(2)}% · from {fmt(neutron.trials)} particles
         </span>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
           <div role="img" aria-label={`Absorbed ${aPct.toFixed(1)}%, bounced back ${rPct.toFixed(1)}%, got through ${tPct.toFixed(1)}%`} style={{ height: 14, borderRadius: 999, overflow: "hidden", display: "flex", background: "#FFFFFF" }}>
@@ -102,6 +107,7 @@ export default function Results() {
           </div>
         </div>
       </section>
+      )}
 
       <div className="in d2" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <button type="button" className="pri" onClick={download} style={btnPrimary}>Download data</button>

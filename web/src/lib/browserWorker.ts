@@ -19,7 +19,7 @@ export type LoopStatus = "stopped" | "waiting" | "computing" | "submitting" | "r
 export interface LoopState {
   status: LoopStatus;
   message: string | null;
-  current: { jobId: string; index: number; done: number; trials: number; thicknessCm: number } | null;
+  current: { jobId: string; index: number; done: number; total: number; template: string; thicknessCm: number; lattice: { L: number; bits: string } | null } | null;
   /** Newest first. */
   tracks: DrawnTrack[];
   completedThisSession: number;
@@ -111,21 +111,29 @@ class BrowserWorker {
           await sleep(NO_WORK_WAIT_MS, signal);
           continue;
         }
-        this.set({ status: "computing", message: null, current: { jobId: lease.job_id, index: lease.index, done: 0, trials: lease.trials, thicknessCm: lease.params.thickness_cm } });
+        const template = lease.template ?? "neutron_slab";
+        this.set({
+          status: "computing",
+          message: null,
+          current: { jobId: lease.job_id, index: lease.index, done: 0, total: 1, template, thicknessCm: Number(lease.params.thickness_cm) || 10, lattice: null },
+          tracks: template === "neutron_slab" ? this.state.tracks : [],
+        });
         const out = await this.kernel.runChunk(
-          { jobId: lease.job_id, masterSeed: lease.master_seed, index: lease.index, trials: lease.trials, params: lease.params },
+          { template, jobId: lease.job_id, masterSeed: lease.master_seed, index: lease.index, trials: lease.trials, params: lease.params },
           {
             signal,
             onProgress: (p) => {
               const cur = this.state.current;
               if (!cur) return;
-              const fresh = p.sampleTracks.map(toDrawn).reverse();
-              this.set({ current: { ...cur, done: p.done }, tracks: [...fresh, ...this.state.tracks].slice(0, 16) });
+              const tracks = (p.sample_tracks as KernelTrack[] | undefined) ?? [];
+              const fresh = tracks.map(toDrawn).reverse();
+              const lattice = typeof p.lattice === "string" ? { L: Number(p.L), bits: p.lattice } : cur.lattice;
+              this.set({ current: { ...cur, done: p.done, total: p.total, lattice }, tracks: [...fresh, ...this.state.tracks].slice(0, 16) });
             },
           },
         );
         this.set({ status: "submitting" });
-        const res = await api.submitResult(session.token, lease.assignment_id, out.hash, out.summary);
+        const res = await api.submitResult(session.token, lease.assignment_id, out.hash, { output: out.output });
         this.set({ completedThisSession: this.state.completedThisSession + 1, lastOutcome: res.status, current: null });
         // Respect the device limit: at L% use, rest (100/L - 1) × the compute time.
         const rest = out.computeMs * (100 / this.state.limit - 1);

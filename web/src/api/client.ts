@@ -15,10 +15,16 @@ export interface JobParams {
   absorb_prob: number;
 }
 
+export type Template = "neutron_slab" | "ising_2d" | "sir_epidemic";
+
 export interface CreateJobRequest {
-  params: JobParams;
+  /** Defaults to neutron_slab on the server. */
+  template?: Template;
+  /** Template params (neutron: JobParams; see docs/api.md for the others). */
+  params: JobParams | Record<string, unknown>;
   chunk_count: number;
-  trials_per_chunk: number;
+  /** Required for neutron_slab; derived for the other templates. */
+  trials_per_chunk?: number;
   price_per_worker: number;
   master_seed?: string;
   refund_after?: number;
@@ -41,7 +47,9 @@ export interface Job {
   job_id: string;
   researcher_addr: string;
   status: JobStatus;
-  params: JobParams;
+  template: Template;
+  /** neutron_slab: JobParams; others: their (defaults-filled) params. */
+  params: JobParams & Record<string, unknown>;
   master_seed: string;
   chunk_count: number;
   trials_per_chunk: number;
@@ -73,9 +81,48 @@ export interface Chunk {
   payout_txid: string | null;
 }
 
+interface ResultHead {
+  job_id: string;
+  status: JobStatus;
+  template: Template;
+  chunks_verified: number;
+  chunk_count: number;
+}
+
+export interface IsingPoint {
+  T: number;
+  m: number;
+  e: number;
+  chi: number;
+  c: number;
+}
+
+export interface IsingResult extends ResultHead {
+  template: "ising_2d";
+  points: IsingPoint[];
+  tc: number | null;
+  tc_theory: number;
+  lattice: { T: number; L: number; bits: string } | null;
+}
+
+export interface SirResult extends ResultHead {
+  template: "sir_epidemic";
+  runs: number;
+  final_size_hist: number[];
+  peak_hist: number[];
+  major_outbreaks: number;
+  p_major: number;
+  major_final_size_mean: number | null;
+  mean_peak_day: number;
+  sample_curves: number[][];
+}
+
+export type AnyResult = JobResult | IsingResult | SirResult;
+
 export interface JobResult {
   job_id: string;
   status: JobStatus;
+  template?: "neutron_slab";
   chunks_verified: number;
   chunk_count: number;
   trials: number;
@@ -137,7 +184,8 @@ export interface Lease {
   job_id: string;
   index: number;
   master_seed: string;
-  params: JobParams;
+  template: Template;
+  params: JobParams & Record<string, unknown>;
   trials: number;
   deadline: number;
 }
@@ -213,7 +261,7 @@ export const api = {
   listJobs: (researcher?: string, signal?: AbortSignal) => data(request<Job[]>("/jobs", { researcher, signal })),
   getJob: (jobId: string, signal?: AbortSignal) => data(request<Job>(`/jobs/${enc(jobId)}`, { signal })),
   getChunks: (jobId: string, signal?: AbortSignal) => data(request<Chunk[]>(`/jobs/${enc(jobId)}/chunks`, { signal })),
-  getResult: (jobId: string, signal?: AbortSignal) => data(request<JobResult>(`/jobs/${enc(jobId)}/result`, { signal })),
+  getResult: (jobId: string, signal?: AbortSignal) => data(request<AnyResult>(`/jobs/${enc(jobId)}/result`, { signal })),
   getProof: (jobId: string, signal?: AbortSignal) => data(request<JobProof>(`/jobs/${enc(jobId)}/proof`, { signal })),
   closeJob: (researcher: string, jobId: string) => data(request<CloseInfo>(`/jobs/${enc(jobId)}/close`, { method: "POST", researcher })),
   /** Raw tx hex fetched through the coordinator's Fulcrum connection. */
@@ -224,8 +272,9 @@ export const api = {
   me: (token: string, signal?: AbortSignal) => data(request<WorkerMe>("/workers/me", { token, signal })),
   /** Next lease, or null when there's no work (204). */
   nextWork: async (token: string, signal?: AbortSignal) => (await request<Lease>("/work/next", { method: "POST", token, signal })).data,
-  submitResult: (token: string, assignmentId: string, hash: string, summary: Summary) =>
-    data(request<{ status: SubmitOutcome }>(`/work/${enc(assignmentId)}/result`, { method: "POST", token, body: { hash, summary } })),
+  /** Submit a result: { output } (hex, any template) or { summary } (neutron only). */
+  submitResult: (token: string, assignmentId: string, hash: string, result: { output: string } | { summary: Summary }) =>
+    data(request<{ status: SubmitOutcome }>(`/work/${enc(assignmentId)}/result`, { method: "POST", token, body: { hash, ...result } })),
 };
 
 /** Human-readable message for any error thrown by the client or wallet code. */

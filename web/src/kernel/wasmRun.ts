@@ -9,7 +9,7 @@
  *   trials      = particles
  * The fingerprint shown in the lab is the kernel's chunk hash.
  */
-import init, { initSync, Simulator } from "./pkg/nova_kernel.js";
+import init, { initSync, Simulator, TemplateSimulator } from "./pkg/nova_kernel.js";
 import type { RunOptions, SimParams, SimProgress, SimResult, Track } from "./types";
 
 let ready: Promise<unknown> | null = null;
@@ -123,54 +123,72 @@ export async function runWasmSimulation(
   }
 }
 
-// ---------------------------------------------------------------- browser worker: real chunks
+// ---------------------------------------------------------------- any template: real chunks
 
 /** Kernel GOLDEN hash (kernel/tests/common/mod.rs): L=10, mfp=3, absorb=0.18, job_id=0x00*32,
  *  seed "0xNOVA2026", index 7, 10,000 trials. A device that reproduces it computes like everyone else. */
 export const GOLDEN = "26b1ba63e890f7348ddab97872a95b5f11e6cfee533228373c9a6ed2a1976ba6";
 
+export type TemplateId = "neutron_slab" | "ising_2d" | "sir_epidemic";
+
 export interface ChunkJob {
+  template: TemplateId;
   jobId: string; // hex, 32 bytes
   masterSeed: string; // hex
   index: number;
   trials: number;
-  params: { thickness_cm: number; mfp_cm: number; absorb_prob: number };
+  params: Record<string, unknown>;
 }
 
+/** Raw progress from the kernel's TemplateSimulator.step (shape depends on the template). */
 export interface ChunkProgress {
   done: number;
-  trials: number;
-  sampleTracks: Track[];
+  total: number;
+  [k: string]: unknown;
 }
 
 export interface ChunkOutput {
   hash: string;
-  summary: { transmitted: number; reflected: number; absorbed: number; histogram: number[] };
+  /** Canonical output bytes, hex: what the coordinator re-hashes. */
+  output: string;
+  /** Decoded output (template-specific). */
+  summary: Record<string, unknown>;
   computeMs: number;
+}
+
+export interface Pacing {
+  /** Units (particles / sweeps / outbreaks) per step; default total/40. */
+  unitsPerStep?: number;
+  /** Pause between steps; default 0 (as fast as possible, yielding to events). */
+  intervalMs?: number;
 }
 
 const yieldToEvents = () => new Promise<void>((r) => setTimeout(r, 0));
 
-/** Computes one leased chunk as fast as possible, reporting progress ~40 times; cancellable. */
-export async function runChunk(job: ChunkJob, { onProgress, signal }: { onProgress?: (p: ChunkProgress) => void; signal?: AbortSignal } = {}): Promise<ChunkOutput> {
+/** Computes one chunk of any template with the WASM kernel, reporting progress; cancellable. */
+export async function runChunk(
+  job: ChunkJob,
+  { onProgress, signal, unitsPerStep, intervalMs = 0 }: { onProgress?: (p: ChunkProgress) => void; signal?: AbortSignal } & Pacing = {},
+): Promise<ChunkOutput> {
   await loadKernel();
-  const sim = new Simulator(job.params, job.jobId, job.masterSeed, job.index, job.trials);
+  const sim = new TemplateSimulator(job.template, JSON.stringify(job.params), job.jobId, job.masterSeed, job.index, job.trials);
   try {
-    const perBatch = Math.max(1, Math.ceil(job.trials / 40));
+    const per = Math.max(1, unitsPerStep ?? Math.ceil(sim.total / 40));
     let computeMs = 0;
-    while (sim.done < sim.trials) {
+    while (sim.done < sim.total) {
       if (signal?.aborted) throw abortError();
       const t0 = performance.now();
-      const p = sim.step(perBatch) as RustProgress;
+      const p = sim.step(per) as ChunkProgress;
       computeMs += performance.now() - t0;
-      onProgress?.({ done: p.done, trials: job.trials, sampleTracks: p.sample_tracks });
-      await yieldToEvents(); // lets cancel messages in
+      onProgress?.(p);
+      if (intervalMs > 0 && sim.done < sim.total) await sleep(intervalMs);
+      else await yieldToEvents(); // lets cancel messages in
     }
     if (signal?.aborted) throw abortError();
     const t0 = performance.now();
-    const r = sim.finish() as RustResult;
+    const r = sim.finish() as { hash: string; output: string; summary: Record<string, unknown> };
     computeMs += performance.now() - t0;
-    return { hash: r.hash, summary: { transmitted: r.transmitted, reflected: r.reflected, absorbed: r.absorbed, histogram: r.histogram }, computeMs };
+    return { ...r, computeMs };
   } finally {
     sim.free();
   }
@@ -178,6 +196,13 @@ export async function runChunk(job: ChunkJob, { onProgress, signal }: { onProgre
 
 /** Determinism self-test: runs the kernel's GOLDEN input and compares the hash. */
 export async function selfTest(): Promise<{ ok: boolean; hash: string; ms: number }> {
-  const out = await runChunk({ jobId: "00".repeat(32), masterSeed: hex(utf8.encode("0xNOVA2026")), index: 7, trials: 10_000, params: { thickness_cm: 10, mfp_cm: 3, absorb_prob: 0.18 } });
+  const out = await runChunk({
+    template: "neutron_slab",
+    jobId: "00".repeat(32),
+    masterSeed: hex(utf8.encode("0xNOVA2026")),
+    index: 7,
+    trials: 10_000,
+    params: { thickness_cm: 10, mfp_cm: 3, absorb_prob: 0.18 },
+  });
   return { ok: out.hash === GOLDEN, hash: out.hash, ms: out.computeMs };
 }

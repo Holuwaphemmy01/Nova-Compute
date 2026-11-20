@@ -3,6 +3,7 @@ import { api, humanError } from "../api/client";
 import { AppHeader } from "../components/Headers";
 import { Loading, Notice } from "../components/Notice";
 import { Tracks } from "../components/Tracks";
+import { SpinGrid } from "../components/charts";
 import { ProgressBar, StatusDot, btnSecondary } from "../components/ui";
 import { explorerTx } from "../config/env";
 import { browserWorker, useBrowserWorker } from "../lib/browserWorker";
@@ -42,7 +43,7 @@ export default function Earnings() {
   useInterval(() => setShown((s) => (s < earned ? Math.min(earned, s + Math.ceil((earned - s) / 5)) : s)), shown < earned ? 80 : null);
 
   const cur = loop.current;
-  const pct = cur ? Math.floor((100 * cur.done) / cur.trials) : 0;
+  const pct = cur ? Math.floor((100 * cur.done) / Math.max(1, cur.total)) : 0;
   const scale = 200 / (cur?.thicknessCm ?? 10);
 
   return (
@@ -83,13 +84,24 @@ export default function Earnings() {
             )}
 
             <section className="in d2" style={{ borderRadius: 24, background: "var(--surface)", overflow: "hidden" }}>
-              <svg viewBox="0 0 480 170" style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label="The piece your device is working on: particles moving through a wall">
-                <defs><clipPath id="wc"><rect x="0" y="0" width="480" height="170" /></clipPath></defs>
-                <rect x="140" y="0" width="200" height="170" fill="#ECECE7" />
-                <g clipPath="url(#wc)">
-                  <Tracks tracks={loop.tracks} x={(v) => 140 + v * scale} y={(v) => 85 + v * scale} />
-                </g>
-              </svg>
+              {cur?.template === "ising_2d" ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: 16 }}>
+                  <SpinGrid L={cur.lattice?.L ?? 32} bits={cur.lattice?.bits ?? null} size={170} label="The piece your device is working on: a magnet's spins settling at one temperature" />
+                </div>
+              ) : cur?.template === "sir_epidemic" ? (
+                <div role="img" aria-label="The piece your device is working on: simulated epidemic outbreaks" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, padding: "40px 16px", fontSize: 15, color: "var(--muted)" }}>
+                  <svg width="44" height="30" viewBox="0 0 44 30" aria-hidden="true"><path d="M2 28 C 12 28, 15 3, 22 3 S 34 27, 42 28" fill="none" stroke="#0AC18E" strokeWidth="2.4" strokeLinecap="round" /></svg>
+                  Simulating outbreak {fmt(cur.done)} of {fmt(cur.total)}
+                </div>
+              ) : (
+                <svg viewBox="0 0 480 170" style={{ display: "block", width: "100%", height: "auto" }} role="img" aria-label="The piece your device is working on: particles moving through a wall">
+                  <defs><clipPath id="wc"><rect x="0" y="0" width="480" height="170" /></clipPath></defs>
+                  <rect x="140" y="0" width="200" height="170" fill="#ECECE7" />
+                  <g clipPath="url(#wc)">
+                    <Tracks tracks={loop.tracks} x={(v) => 140 + v * scale} y={(v) => 85 + v * scale} />
+                  </g>
+                </svg>
+              )}
               <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
                   <span style={{ fontWeight: 600 }}>

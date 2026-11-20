@@ -83,6 +83,98 @@ export class Simulator {
     }
 }
 if (Symbol.dispose) Simulator.prototype[Symbol.dispose] = Simulator.prototype.free;
+
+/**
+ * Generic streaming simulator for every template (same RNG stream as `templates::run_chunk`).
+ */
+export class TemplateSimulator {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        TemplateSimulatorFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_templatesimulator_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get done() {
+        const ret = wasm.templatesimulator_done(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Runs the rest. Returns `{ hash, output (hex), summary }` where summary is the decoded output.
+     * @returns {any}
+     */
+    finish() {
+        const ret = wasm.templatesimulator_finish(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * `template`: "neutron_slab" | "ising_2d" | "sir_epidemic"; `params_json`: the job's params
+     * (Ising params include n_temps). `trials`: particles / measurement sweeps / outbreaks.
+     * @param {string} template
+     * @param {string} params_json
+     * @param {string} job_id_hex
+     * @param {string} master_seed_hex
+     * @param {number} index
+     * @param {number} trials
+     */
+    constructor(template, params_json, job_id_hex, master_seed_hex, index, trials) {
+        const val5 = +index;
+        const val6 = +trials;
+        let ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3;
+        try {
+            ptr0 = passStringToWasm0(template, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            len0 = WASM_VECTOR_LEN;
+            ptr1 = passStringToWasm0(params_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            len1 = WASM_VECTOR_LEN;
+            ptr2 = passStringToWasm0(job_id_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            len2 = WASM_VECTOR_LEN;
+            ptr3 = passStringToWasm0(master_seed_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            len3 = WASM_VECTOR_LEN;
+        } catch (e) {
+            if (ptr3) { wasm.__wbindgen_free(ptr3, len3 * 1, 1); }
+            if (ptr2) { wasm.__wbindgen_free(ptr2, len2 * 1, 1); }
+            if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+            if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 1, 1); }
+            throw e;
+        }
+        const ret = wasm.templatesimulator_new(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, val5, val6);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        TemplateSimulatorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Advances up to `n` units (particles / sweeps / outbreaks); returns a progress object.
+     * @param {number} n
+     * @returns {any}
+     */
+    step(n) {
+        const ret = wasm.templatesimulator_step(this.__wbg_ptr, n);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {number}
+     */
+    get total() {
+        const ret = wasm.templatesimulator_total(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) TemplateSimulator.prototype[Symbol.dispose] = TemplateSimulator.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -116,6 +208,10 @@ function __wbg_get_imports() {
         __wbg___wbindgen_is_object_8b968c3ab8e96595: function(arg0) {
             const val = arg0;
             const ret = typeof(val) === 'object' && val !== null;
+            return ret;
+        },
+        __wbg___wbindgen_is_string_fc456fee5d3317de: function(arg0) {
+            const ret = typeof(arg0) === 'string';
             return ret;
         },
         __wbg___wbindgen_is_undefined_be5b34249ff1fc15: function(arg0) {
@@ -179,12 +275,20 @@ function __wbg_get_imports() {
             const ret = new Array();
             return ret;
         },
+        __wbg_new_7075786089b89c5e: function() {
+            const ret = new Map();
+            return ret;
+        },
         __wbg_new_cd4348290afae586: function() {
             const ret = new Object();
             return ret;
         },
         __wbg_prototypesetcall_13162965d1fe7aa3: function(arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
+        },
+        __wbg_set_8282f7e0d2d01336: function(arg0, arg1, arg2) {
+            const ret = arg0.set(arg1, arg2);
+            return ret;
         },
         __wbg_set_d2d33b52458e984a: function(arg0, arg1, arg2) {
             arg0[arg1 >>> 0] = arg2;
@@ -197,9 +301,19 @@ function __wbg_get_imports() {
             const ret = arg0;
             return ret;
         },
-        __wbindgen_generic_0000000000000002: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000002: function(arg0) {
+            // Cast intrinsic for `I64 -> Externref`.
+            const ret = arg0;
+            return ret;
+        },
+        __wbindgen_generic_0000000000000003: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        },
+        __wbindgen_generic_0000000000000004: function(arg0) {
+            // Cast intrinsic for `U64 -> Externref`.
+            const ret = BigInt.asUintN(64, arg0);
             return ret;
         },
         __wbindgen_init_externref_table: function() {
@@ -220,6 +334,9 @@ function __wbg_get_imports() {
 const SimulatorFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_simulator_free(ptr, 1));
+const TemplateSimulatorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_templatesimulator_free(ptr, 1));
 
 function debugString(val) {
     switch (typeof val) {

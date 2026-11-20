@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Simulator } from "./pkg/nova_kernel.js";
 import type { SimParams } from "./types";
-import { labJobIdHex, loadKernelSync, runWasmSimulation } from "./wasmRun";
+import { labJobIdHex, loadKernelSync, runChunk, runWasmSimulation } from "./wasmRun";
 
 /** Must equal GOLDEN in kernel/tests/common/mod.rs. */
 const GOLDEN = "26b1ba63e890f7348ddab97872a95b5f11e6cfee533228373c9a6ed2a1976ba6";
@@ -65,5 +65,26 @@ describe("WASM kernel in the web app", () => {
     const run = runWasmSimulation(base, { batches: 50, intervalMs: 5, signal: ctrl.signal });
     ctrl.abort();
     await expect(run).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+/** Must equal GOLDEN_ISING / GOLDEN_SIR in kernel/tests/common/mod.rs. */
+describe("templates in the shipped WASM package", () => {
+  const job = { jobId: "00".repeat(32), masterSeed: hex("0xNOVA2026") };
+  it("Ising golden", async () => {
+    const out = await runChunk({ ...job, template: "ising_2d", index: 3, trials: 300, params: { L: 16, t_min: 1.5, t_max: 3.5, n_temps: 8, eq_sweeps: 200, meas_sweeps: 300 } }, { unitsPerStep: 37 });
+    expect(out.hash).toBe("807cf2d044969af31d7f5223e015bf4b6a0c203d40a730ebc41657d35ebb4129");
+    expect(out.summary.L).toBe(16);
+    expect(out.summary.temperature).toBeCloseTo(1.5 + 3 * (2 / 7), 12);
+  });
+  it("SIR golden", async () => {
+    const out = await runChunk({ ...job, template: "sir_epidemic", index: 2, trials: 50, params: { population: 2000, initial_infected: 5, r0: 2.5, recovery_days: 7, runs_per_chunk: 50 } }, { unitsPerStep: 7 });
+    expect(out.hash).toBe("e7699424b22f0e077e742eb2a972b57766c58779026090311d58a506fa664b88");
+    expect(out.summary.runs).toBe(50);
+    expect((out.summary.curve as number[]).length).toBe(180);
+  });
+  it("neutron through the template runner equals the original GOLDEN", async () => {
+    const out = await runChunk({ ...job, template: "neutron_slab", index: 7, trials: 10_000, params: { thickness_cm: 10, mfp_cm: 3, absorb_prob: 0.18 } });
+    expect(out.hash).toBe(GOLDEN);
   });
 });

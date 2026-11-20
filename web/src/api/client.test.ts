@@ -32,7 +32,7 @@ describe("API client", () => {
 
   it("maps { error: { code, message } } to ApiError", async () => {
     mockFetch(410, { error: { code: "lease_expired", message: "lease expired" } });
-    const e = await api.submitResult("t", "a1", "00", { transmitted: 0, reflected: 0, absorbed: 0, histogram: [] }).catch((x) => x);
+    const e = await api.submitResult("t", "a1", "00", { summary: { transmitted: 0, reflected: 0, absorbed: 0, histogram: [] } }).catch((x) => x);
     expect(e).toBeInstanceOf(ApiError);
     expect(e).toMatchObject({ status: 410, code: "lease_expired", message: "lease expired" });
   });

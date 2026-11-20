@@ -37,6 +37,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   outline-offset: 3px;
 }
 input[type="range"] { accent-color: var(--ink); width: 100%; }
+/* Template cards hide their native radio; show its keyboard focus on the card. */
+label:has(> input[type="radio"]:focus-visible) { outline: 2px solid var(--green); outline-offset: 3px; }
 .mono { font-family: var(--mono); }
 .tnum { font-variant-numeric: tabular-nums; }
 .sr-only {

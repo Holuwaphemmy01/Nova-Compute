@@ -2,18 +2,18 @@
  * Runs the WASM kernel off the main thread so the page never freezes.
  * Requests (main → worker):
  *   { type: "run", id, params }        Simulation lab run (paced, for display)
- *   { type: "chunk", id, job }         a leased coordinator chunk (full speed)
+ *   { type: "chunk", id, job, pace? }  a chunk of any template (full speed, or paced for display)
  *   { type: "selftest", id }           determinism self-test (GOLDEN)
  *   { type: "cancel", id }
  * Replies (worker → main): { type: "progress" | "done" | "cancelled" | "error", id, ... }
  * Starting a new request cancels any request still in progress.
  */
 import type { SimParams } from "./types";
-import { runChunk, runWasmSimulation, selfTest, type ChunkJob } from "./wasmRun";
+import { runChunk, runWasmSimulation, selfTest, type ChunkJob, type Pacing } from "./wasmRun";
 
 export type ToWorker =
   | { type: "run"; id: number; params: SimParams }
-  | { type: "chunk"; id: number; job: ChunkJob }
+  | { type: "chunk"; id: number; job: ChunkJob; pace?: Pacing }
   | { type: "selftest"; id: number }
   | { type: "cancel"; id: number };
 
@@ -43,7 +43,7 @@ ctx.onmessage = async (e) => {
       msg.type === "run"
         ? await runWasmSimulation(msg.params, { signal: ctrl.signal, onProgress: progress })
         : msg.type === "chunk"
-          ? await runChunk(msg.job, { signal: ctrl.signal, onProgress: progress })
+          ? await runChunk(msg.job, { signal: ctrl.signal, onProgress: progress, ...msg.pace })
           : await selfTest();
     ctx.postMessage({ type: "done", id: msg.id, result });
   } catch (err) {

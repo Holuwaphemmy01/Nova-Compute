@@ -7,6 +7,9 @@ import type { SimKernel, SimParams, SimProgress, SimResult, Track as KernelTrack
 import { createWasmKernel, isAbort } from "../kernel/wasmKernel";
 import { fmt } from "../lib/random";
 import type { Track as DrawnTrack } from "../lib/walk";
+import { TemplatePicker } from "../components/TemplatePicker";
+import type { TemplateId } from "../lib/templates";
+import { IsingLab, SirLab } from "./TemplateLabs";
 
 type Device = "gpu" | "cpu";
 type GpuSupport = "checking" | "available" | "unavailable";
@@ -66,6 +69,7 @@ const sameParams = (a: SimParams, b: SimParams) =>
   a.thicknessCm === b.thicknessCm && a.mfpCm === b.mfpCm && a.absorbProb === b.absorbProb && a.particles === b.particles && a.seed === b.seed;
 
 export default function Lab() {
+  const [template, setTemplate] = useState<TemplateId>("neutron_slab");
   const [thickness, setThickness] = useState(10);
   const [mfp, setMfp] = useState(3);
   const [absorb, setAbsorb] = useState(18);
@@ -172,10 +176,19 @@ export default function Lab() {
             Test a simulation on <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>this device.</span>
           </h1>
           <p style={{ margin: 0, fontSize: 18, color: "var(--muted)", lineHeight: 1.55 }}>
-            Fire particles at a wall and see how many get through. When the numbers look right, run it at scale on Nova.
+            {template === "ising_2d"
+              ? "Heat a tiny magnet and watch its order melt. When the numbers look right, sweep many temperatures on Nova."
+              : template === "sir_epidemic"
+                ? "Seed a few cases in a town and see how big outbreaks get. When the numbers look right, run thousands on Nova."
+                : "Fire particles at a wall and see how many get through. When the numbers look right, run it at scale on Nova."}
           </p>
         </div>
 
+        <div className="in d1">
+          <TemplatePicker value={template} onChange={setTemplate} disabled={running} />
+        </div>
+
+        {template === "ising_2d" ? <IsingLab /> : template === "sir_epidemic" ? <SirLab /> : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
           <section className="in d1" aria-label="Settings" style={{ ...card, flex: "1 1 300px", minWidth: 0, gap: 24 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -293,6 +306,7 @@ export default function Lab() {
             )}
           </section>
         </div>
+        )}
       </main>
     </div>
   );

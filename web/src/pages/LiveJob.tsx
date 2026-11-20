@@ -9,6 +9,7 @@ import { chunkDisplay, jobTitle, type ChunkDisplay } from "../lib/jobs";
 import { fmt } from "../lib/random";
 import { usePoll } from "../lib/usePoll";
 import { FundPanel } from "../wallet/FundPanel";
+import { LiveChart, answerStat } from "../components/templateViews";
 
 const CELL_BASE: CSSProperties = { display: "block", aspectRatio: "1", borderRadius: 3, boxSizing: "border-box" };
 const CELL: Record<ChunkDisplay, { cls?: string; style: CSSProperties; label: string }> = {
@@ -54,13 +55,10 @@ export default function LiveJob() {
 
       <div className="in d1" style={{ display: "flex", flexWrap: "wrap", gap: 20 }}>
         <BigStat label={statusLine} value={`${Math.round((verified / j.chunk_count) * 100)}%`} sub={`${verified} of ${j.chunk_count} pieces checked`} />
-        <BigStat
-          label="Answer so far"
-          value={r && r.trials > 0 ? `${(r.transmitted_fraction * 100).toFixed(1)}%` : "—"}
-          sub={r && r.trials > 0 ? `of particles get through · ± ${(r.transmitted_std_error * 100).toFixed(2)}%` : "appears as pieces are checked"}
-          mint
-        />
+        <BigStat {...answerStat(r)} mint />
       </div>
+
+      <LiveChart result={r} job={j} />
 
       <section className="in d2" aria-label="Pieces" style={{ padding: 28, borderRadius: 24, border: "1px solid var(--line-soft)", display: "flex", flexDirection: "column", gap: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>

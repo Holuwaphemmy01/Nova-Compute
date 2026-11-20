@@ -48,7 +48,7 @@ describe("kernel self-test", () => {
 
 describe("browser worker loop", () => {
   it("leases, computes with the WASM kernel, submits, waits on 204 and stops on pause", async () => {
-    const submitted: { url: string; body: { hash: string; summary: { transmitted: number; reflected: number; absorbed: number; histogram: number[] } } }[] = [];
+    const submitted: { url: string; body: { hash: string; output: string } }[] = [];
     let nextCalls = 0;
     vi.stubGlobal(
       "fetch",
@@ -70,10 +70,12 @@ describe("browser worker loop", () => {
 
     browserWorker.start();
     await until(() => submitted.length === 1 && nextCalls >= 2);
-    const { hash, summary } = submitted[0].body;
+    const { hash, output } = submitted[0].body;
     expect(hash).toBe(GOLDEN);
-    expect(summary.transmitted + summary.reflected + summary.absorbed).toBe(10_000);
-    expect(summary.histogram).toHaveLength(64);
+    // Canonical neutron output: 3 counts + 64 bins, u32 LE each, as hex.
+    expect(output).toHaveLength((3 + 64) * 4 * 2);
+    const words = Array.from({ length: 3 }, (_, i) => parseInt(output.slice(i * 8, i * 8 + 8).match(/../g)!.reverse().join(""), 16));
+    expect(words[0] + words[1] + words[2]).toBe(10_000);
     expect(browserWorker.get().completedThisSession).toBe(1);
     expect(browserWorker.get().lastOutcome).toBe("accepted");
     expect(browserWorker.get().status).toBe("waiting"); // 204 → waiting 3 s before asking again
