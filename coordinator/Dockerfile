@@ -12,11 +12,14 @@ COPY kernel ./kernel
 COPY coordinator ./coordinator
 COPY contracts/artifacts ./contracts/artifacts
 RUN cargo build --release --locked -p nova-coordinator --bin nova-coordinator \
- && strip target/release/nova-coordinator
+ && strip target/release/nova-coordinator \
+ && mkdir -p /out/data
 
 # ---- run ----
 FROM scratch
 COPY --from=build /src/target/release/nova-coordinator /nova-coordinator
+# Empty /data so SQLite can create its file when no volume is mounted (e.g. Render free plan).
+COPY --from=build /out/data /data
 # TLS roots for Fulcrum are compiled in (webpki-roots), so no CA bundle is needed.
 ENV PORT=8080 \
     DATABASE_URL=sqlite:///data/nova.db \

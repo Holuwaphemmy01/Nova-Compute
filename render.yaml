@@ -1,0 +1,37 @@
+# Render Blueprint for the Nova coordinator (Dashboard → New → Blueprint → pick this repo).
+# Builds coordinator/Dockerfile with the repo root as context (it needs kernel/ and contracts/).
+#
+# Secrets are NOT stored here: ORACLE_WIF, FEE_WIF and CORS_ORIGIN are marked sync: false,
+# so Render asks for them when the Blueprint is created.
+#
+# FREE PLAN LIMITS (chipnet demo only):
+#   - No persistent disk: the SQLite database is wiped on every deploy, restart or spin-down.
+#     Finish (or close) running jobs before you deploy.
+#   - Sleeps after 15 min without requests. Keep it awake by pinging /health every 10 min
+#     (e.g. UptimeRobot or cron-job.org); 750 free hours/month covers one service running 24/7.
+# For a durable setup switch to `plan: starter` and add:
+#     disk: { name: nova-data, mountPath: /data, sizeGB: 1 }
+services:
+  - type: web
+    name: nova-coordinator
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: blaze-build
+    dockerfilePath: ./coordinator/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    numInstances: 1
+    envVars:
+      - key: NETWORK
+        value: chipnet
+      - key: DATABASE_URL
+        value: sqlite:///data/nova.db
+      - key: RUST_LOG
+        value: info,sqlx=warn
+      - key: ORACLE_WIF
+        sync: false
+      - key: FEE_WIF
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
