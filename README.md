@@ -12,6 +12,15 @@
 
 > The demo runs on Render's free plan: the first request after a quiet spell can take ~1 min while it wakes.
 
+## How to test (3 minutes)
+
+1. Open the [live demo](https://nova-compute-web.onrender.com) in **two different browsers** (e.g. Chrome and Firefox, or a laptop and a phone).
+2. In each, click **Earn with your computer** and use a **different** chipnet payout address: every piece needs two different workers.
+3. In a third tab, click **Run a simulation**, connect a chipnet wallet with WizardConnect (Paytaca; test BCH from [tbch.googol.cash](https://tbch.googol.cash)) and fund a small job.
+4. Watch each piece get computed by both workers, verified and paid. Click a payout txid to see it on-chain.
+
+No wallet? Click **Try a free simulation** to run the kernel in your browser instantly.
+
 ## Proof on-chain
 
 ### Mainnet
@@ -101,7 +110,8 @@ Built Nov 14–22:
 - **Kernel:** deterministic neutron transport in Rust/WASM with golden-hash tests (native + WASM), then the Ising 2D and SIR epidemic templates.
 - **Contracts:** NovaEscrow with payout / close / refund, replay tests, chipnet demo and golden vectors shared with the coordinator.
 - **Coordinator:** BCH primitives matching the contract vectors, Fulcrum client, jobs, scheduler, verification, payouts, template-aware results, chipnet e2e binary, Docker image.
-- **Proof:** three chipnet end-to-end runs (above); deploy config for Render.
+- **Worker:** native `nova-worker` CLI using the kernel crate directly, same hashes as the browser.
+- **Proof:** three chipnet end-to-end runs and one BCH mainnet run (above); Render deploy.
 
 ## Run locally
 
@@ -127,18 +137,16 @@ The simulation lab works without the coordinator. Tests: `cargo test` (kernel + 
 ## Run a provider node
 
 Earn BCH from your own PC with the native worker. It runs the same Rust kernel as the browser,
-so results match bit for bit. Download
-[`nova-worker.exe`](https://github.com/Holuwaphemmy01/Nova-Compute/releases/download/nova-worker-v0.1/nova-worker.exe)
-([release](https://github.com/Holuwaphemmy01/Nova-Compute/releases/tag/nova-worker-v0.1)), then:
+so results match bit for bit. Build and run it from source (needs Rust stable):
 
 ```bash
-nova-worker.exe --payout-addr <your BCH address>
+cargo run --release -p nova-worker -- --payout-addr <your BCH address>
 ```
 
 It checks the kernel against the golden hashes, registers, and loops: take a piece → compute →
 submit → print verified count, sats earned and the latest payout tx. `--coordinator <url>` picks
 another coordinator (default `https://nova-coordinator.onrender.com`); `--once` does one piece.
-Ctrl+C stops after the current piece. From source: `cargo run --release -p nova-worker -- --payout-addr ...`.
+Ctrl+C stops after the current piece.
 
 ## Roadmap
 
