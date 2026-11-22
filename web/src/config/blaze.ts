@@ -3,7 +3,7 @@ export const BLAZE_LINKS = {
   baselineCode: "https://github.com/Holuwaphemmy01/Nova-Compute/tree/blaze-start",
   baselineDesigns: "https://github.com/Holuwaphemmy01/Nova-Compute/tree/blaze-start/design",
   repo: "https://github.com/Holuwaphemmy01/Nova-Compute",
-  slides: "<SLIDES_LINK>",
+  slides: "https://docs.google.com/presentation/d/1RohvlVEY_oiTu-SfjnhdvDGlHyM-XXfOKp0-Gsi9VaA",
   emberAddress: "<EMBER_ADDRESS>",
 } as const;
 

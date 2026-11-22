@@ -7,7 +7,7 @@
 | **Live demo** | https://nova-compute-web.onrender.com |
 | **API** | https://nova-coordinator.onrender.com/health |
 | Nov 14 baseline code | [tree/blaze-start](https://github.com/Holuwaphemmy01/nova-compute/tree/blaze-start) · [baseline details](docs/baseline.md) |
-| Slides | [Widget Factory slides] |
+| Slides | [Google Slides](https://docs.google.com/presentation/d/1RohvlVEY_oiTu-SfjnhdvDGlHyM-XXfOKp0-Gsi9VaA) |
 | CashTokens address | [EMBER2026 CashTokens address] |
 
 > The demo runs on Render's free plan: the first request after a quiet spell can take ~1 min while it wakes.
