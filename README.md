@@ -12,11 +12,11 @@
 
 > The demo runs on Render's free plan: the first request after a quiet spell can take ~1 min while it wakes.
 
-## How to test (3 minutes)
+## How to test (3 minutes, BCH mainnet)
 
 1. Open the [live demo](https://nova-compute-web.onrender.com) in **two different browsers** (e.g. Chrome and Firefox, or a laptop and a phone).
-2. In each, click **Earn with your computer** and use a **different** chipnet payout address: every piece needs two different workers.
-3. In a third tab, click **Run a simulation**, connect a chipnet wallet with WizardConnect (Paytaca; test BCH from [tbch.googol.cash](https://tbch.googol.cash)) and fund a small job.
+2. In each, click **Earn with your computer** and use a **different** BCH mainnet payout address: every piece needs two different workers.
+3. In a third tab, click **Run a simulation**, connect your BCH wallet with WizardConnect (Paytaca) and fund a small job (a few thousand sats).
 4. Watch each piece get computed by both workers, verified and paid. Click a payout txid to see it on-chain.
 
 No wallet? Click **Try a free simulation** to run the kernel in your browser instantly.
