@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "kernel:build": "wasm-pack build ../kernel --target web --release --out-dir ../web/src/kernel/pkg --no-pack && node -e \"require('fs').rmSync('src/kernel/pkg/.gitignore',{force:true})\"",
     "dev": "vite",
