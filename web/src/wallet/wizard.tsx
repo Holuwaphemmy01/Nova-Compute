@@ -87,7 +87,7 @@ interface WalletApi {
 const Ctx = createContext<WalletApi | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const wc = useWizardConnect({ dappName: "Nova Compute", dappIcon: `${location.origin}/favicon.svg`, storage: safeStorage });
+  const wc = useWizardConnect({ dappName: "Nova Compute", dappIcon: `${location.origin}/nova-logo.png`, storage: safeStorage });
   const { manager, state, walletName } = wc;
 
   // Mirror the connection into the app-wide wallet store (public data only).

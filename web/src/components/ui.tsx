@@ -1,12 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
 export function Logo({ size = 26 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 26 26" aria-hidden="true">
-      <rect width="26" height="26" rx="8" fill="#16161A" />
-      <circle cx="13" cy="13" r="4" fill="#0AC18E" />
-    </svg>
-  );
+  return <img src="/nova-logo.png" width={size} height={size} alt="" aria-hidden="true" style={{ display: "block", borderRadius: size * 0.22 }} />;
 }
 
 export function Spinner({ size = 14 }: { size?: number }) {
