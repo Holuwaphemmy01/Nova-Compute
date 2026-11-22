@@ -221,6 +221,21 @@ Result over 800 outbreaks: P(major outbreak) = 1.000, mean final size of major o
 | Ising, L=32, 3,000 sweeps | 1.1–2.9 s | 115–127 ms |
 | SIR, 200 outbreaks, N=10,000 | 2.8–3.8 s | 349–399 ms |
 
+## Chipnet run: browser worker + native nova-worker (2026-11-22)
+
+`cargo run -p nova-coordinator --bin e2e -- --chunks 2 --price 1200 --external 8091` funded a
+2-piece neutron job and served the HTTP API. One headless-Chrome tab ran the real browser worker
+(WASM kernel, `nova-kernel/0.1 wasm sha256:b170aa14…`, payout `bchtest:qpc5nfj5…`) and one
+`nova-worker` (native kernel, `nova-kernel/0.1 native sha256:a0c44eb7…`, payout
+`bchtest:qrughzrg…`) ran against it. Both pieces: the two hashes matched → verified → paid.
+
+| Step | Txid |
+|---|---|
+| Funding | [98fac84de27e…7ed3](https://chipnet.imaginary.cash/tx/98fac84de27e9a658ed771e2dbddbbf1d818fcfaf3a60125dea30c0036897ed3) |
+| Payout piece 0 (browser + native) | [6a38b00ae55f…9b7a](https://chipnet.imaginary.cash/tx/6a38b00ae55faee0074e85407cafc5ab6ed432d7630ebb43737a7059994b9b7a) |
+| Payout piece 1 (browser + native) | [2abbb3989019…2d9e](https://chipnet.imaginary.cash/tx/2abbb3989019a6da30ebbfae31038df4619e34ee0528d0e5ac1bddd39d1b2d9e) |
+| OP_RETURN (Merkle `4f87cbf6…e79c`) | [6cb2bd800b0d…2bd9](https://chipnet.imaginary.cash/tx/6cb2bd800b0d0c6250bf3253071cf869474770c9680d62485560a0a198352bd9) |
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

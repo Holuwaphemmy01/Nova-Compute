@@ -3,6 +3,11 @@
 //!   cargo run -p nova-coordinator --bin e2e -- --chunks 4 --price 1200 [--trials 10000]
 //!   cargo run -p nova-coordinator --bin e2e -- --template ising --chunks 8 --price 1200
 //!   cargo run -p nova-coordinator --bin e2e -- --template sir --chunks 4 --price 1200
+//!   cargo run -p nova-coordinator --bin e2e -- --chunks 2 --external 8080
+//!
+//! `--external <port>`: test harness for outside workers (browser tab, nova-worker). Instead of
+//! the 2 in-process workers it serves the normal HTTP API on that port (CORS open) from this same
+//! in-process coordinator and waits for external workers to complete the job.
 //!
 //! Needs ORACLE_WIF and FEE_WIF (chipnet) in the environment or a .env file; the FEE_WIF wallet
 //! funds the job (it plays the researcher, so close/refund would return funds to it) and pays
@@ -68,6 +73,7 @@ async fn main() {
     let chunks = arg("--chunks", 4) as u32;
     let price = arg("--price", 1200);
     let trials = arg("--trials", 10_000) as u32;
+    let external: Option<u16> = std::env::args().any(|a| a == "--external").then(|| arg("--external", 8080) as u16);
     let (template, params) = match str_arg("--template", "neutron").as_str() {
         "neutron" | "neutron_slab" => (Template::NeutronSlab, json!({ "thickness_cm": 10.0, "mfp_cm": 3.0, "absorb_prob": 0.18 })),
         "ising" | "ising_2d" => (Template::Ising2D, json!({ "L": 32, "t_min": 1.5, "t_max": 3.5, "eq_sweeps": 1000, "meas_sweeps": 2000 })),
@@ -85,6 +91,7 @@ async fn main() {
         std::process::exit(2);
     }
     let fee = cfg.settings.fee.clone();
+    let oracle_addr = cfg.settings.oracle.address(net);
     let researcher_addr = fee.address(net);
     let chain = Arc::new(FulcrumClient::new(&cfg.fulcrum_servers).expect("fulcrum"));
     let db_path = std::env::temp_dir().join(format!("nova-e2e-{}.db", service::now_ms()));
@@ -132,9 +139,16 @@ async fn main() {
     println!("\nfunding  {}", link(net, &funding_txid));
     c.mark_funded(&job.job_id, &researcher_addr, &funding_txid).await.expect("mark funded");
 
-    // 3. Two in-process workers with different payout addresses
+    // 3. Workers: external (HTTP API) or two in-process ones with different payout addresses
     let mut handles = Vec::new();
-    for _ in 0..2 {
+    if let Some(port) = external {
+        let app = nova_coordinator::api::router(c.clone()).layer(tower_http::cors::CorsLayer::permissive());
+        let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
+        tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        println!("api      http://localhost:{port} — waiting for external workers");
+        println!("payout addresses you control: {researcher_addr} (fee) · {oracle_addr} (oracle)");
+    }
+    for _ in 0..if external.is_some() { 0 } else { 2 } {
         let k = PrivateKey::random();
         let s = c.create_worker(&k.address(net), "nova-kernel/0.1 native").await.unwrap();
         let w = c.auth_worker(&s.token).await.unwrap();
@@ -149,7 +163,7 @@ async fn main() {
         if v.status == "complete" {
             break v;
         }
-        if start.elapsed() > Duration::from_secs(600) {
+        if start.elapsed() > Duration::from_secs(if external.is_some() { 1800 } else { 600 }) {
             eprintln!("timed out; job status {} ({:?})", v.status, v.last_error);
             std::process::exit(1);
         }

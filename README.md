@@ -67,6 +67,7 @@ susceptibility peak (exact 2.269; grid spacing 0.29) · SIR R0 = 2.5: mean major
 | **Kernel** (`kernel/`) | Rust, compiled to WebAssembly. Three templates: neutron slab transport, 2D Ising (Metropolis), SIR epidemic (Gillespie). Bit-for-bit deterministic: ChaCha8, libm, sequential loops, IEEE-754 outputs. Native and WASM builds produce the same golden hashes. |
 | **Escrow** (`contracts/`) | CashScript `NovaEscrow`: `payout` (oracle-attested, pays both providers), `close` (researcher + oracle reclaim unfinished pieces), `refund` (timeout). |
 | **Coordinator** (`coordinator/`) | Rust, axum + tokio + SQLite. Jobs, leases, double-compute verification, oracle signing (BCH Schnorr), payout and OP_RETURN broadcast via Fulcrum. |
+| **Worker** (`worker/`) | `nova-worker`: native CLI provider using the kernel crate directly; same hashes as the browser. |
 | **Web** (`web/`) | React + TypeScript + Vite. Researcher flow, browser provider that earns, simulation lab, live job view, on-chain result check. WizardConnect wallet; keys never leave the wallet. |
 
 More: [docs/architecture.md](docs/architecture.md) · [docs/api.md](docs/api.md) · [docs/decisions.md](docs/decisions.md)
@@ -105,9 +106,25 @@ The simulation lab works without the coordinator. Tests: `cargo test` (kernel + 
 `cargo run -p nova-coordinator --bin e2e -- --template ising --chunks 8 --price 1200`
 (the fee wallet must be funded; it prints how much it needs).
 
+## Run a provider node
+
+Earn BCH from your own PC with the native worker. It runs the same Rust kernel as the browser,
+so results match bit for bit. Download
+[`nova-worker.exe`](https://github.com/Holuwaphemmy01/Nova-Compute/releases/download/nova-worker-v0.1/nova-worker.exe)
+([release](https://github.com/Holuwaphemmy01/Nova-Compute/releases/tag/nova-worker-v0.1)), then:
+
+```bash
+nova-worker.exe --payout-addr <your BCH address>
+```
+
+It checks the kernel against the golden hashes, registers, and loops: take a piece → compute →
+submit → print verified count, sats earned and the latest payout tx. `--coordinator <url>` picks
+another coordinator (default `https://nova-coordinator.onrender.com`); `--once` does one piece.
+Ctrl+C stops after the current piece. From source: `cargo run --release -p nova-worker -- --payout-addr ...`.
+
 ## Roadmap
 
-- **GPU workers:** a native/WebGPU provider so idle GPUs take the large pieces.
+- **GPU workers:** WebGPU / CUDA kernels in the native worker so idle GPUs take the large pieces.
 - **Researcher-set parallelism and verification:** choose piece count, and 2-of-2, 2-of-3 or spot-check verification per job, traded off against price.
 - **Custom WASM jobs:** researchers upload their own deterministic WASM kernel against a fixed ABI.
 
