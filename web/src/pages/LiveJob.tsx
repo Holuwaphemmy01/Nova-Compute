@@ -42,7 +42,7 @@ export default function LiveJob() {
   const r = result.data;
   const paidRows = cs.filter((c) => c.payout_txid).sort((a, b) => b.index - a.index).slice(0, 5);
   const statusLine =
-    j.status === "awaiting_funding" ? "Waiting for funding" : j.status === "finalizing" ? "All pieces checked · writing the proof on chain" : complete ? "Done" : running > 0 ? `Running on ${running} GPUs right now` : "Waiting for providers";
+    j.status === "awaiting_funding" ? "Waiting for funding" : j.status === "finalizing" ? "All pieces checked · writing the proof on chain" : complete ? "Done" : running > 0 ? `Running on ${running} computers right now` : "Waiting for providers";
 
   return (
     <Shell>

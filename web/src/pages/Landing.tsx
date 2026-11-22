@@ -1,16 +1,12 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { SiteHeader } from "../components/Headers";
+import { BLAZE_LINKS, blazeValue } from "../config/blaze";
+import { NETWORK } from "../config/env";
 import { Tracks } from "../components/Tracks";
 import { mulberry32, fmt } from "../lib/random";
 import { useInterval } from "../lib/useInterval";
 import { walk, type Track } from "../lib/walk";
-
-const BLAZE_LINKS = {
-  slides: "#", // [Widget Factory slides]
-  github: "https://github.com/Holuwaphemmy01/Nova-Compute",
-  cashTokensAddress: "[CASHTOKENS ADDRESS]",
-};
 
 export default function Landing() {
   return (
@@ -21,11 +17,12 @@ export default function Landing() {
       <HeroIllustration />
       <HowItWorks />
       <LiveDemo />
+      <Proof />
       <ProviderCta />
       <footer style={{ borderTop: "1px solid var(--line-soft)" }}>
         <div style={{ maxWidth: 1160, margin: "0 auto", padding: "28px 32px", display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", fontSize: 14, color: "var(--muted)" }}>
           <span>Nova · built on Bitcoin Cash</span>
-          <span>Mainnet · WizardConnect · CashScript</span>
+          <span>Live on {NETWORK} · WizardConnect · CashScript</span>
         </div>
       </footer>
     </div>
@@ -33,15 +30,20 @@ export default function Landing() {
 }
 
 function BlazeBar() {
+  const slides = blazeValue(BLAZE_LINKS.slides);
+  const repo = blazeValue(BLAZE_LINKS.repo);
+  const ember = blazeValue(BLAZE_LINKS.emberAddress);
   return (
     <div role="region" aria-label="BCH BLAZE 2026 submission links" style={{ background: "var(--ink)", fontSize: 13, color: "#C9C9CF" }}>
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "10px 32px", display: "flex", gap: "8px 24px", flexWrap: "wrap", justifyContent: "center" }}>
         <span style={{ color: "#FFFFFF", fontWeight: 600 }}>BCH BLAZE 2026</span>
-        <a href={BLAZE_LINKS.slides} className="nl" style={{ color: "#C9C9CF" }}>Slides</a>
-        <a href={BLAZE_LINKS.github} className="nl" style={{ color: "#C9C9CF" }}>GitHub</a>
-        <span>
-          EMBER2026: <span className="mono">{BLAZE_LINKS.cashTokensAddress}</span>
-        </span>
+        {slides && <a href={slides} className="nl" style={{ color: "#C9C9CF" }}>Slides</a>}
+        {repo && <a href={repo} className="nl" style={{ color: "#C9C9CF" }}>GitHub</a>}
+        {ember && (
+          <span style={{ overflowWrap: "anywhere" }}>
+            EMBER2026: <span className="mono">{ember}</span>
+          </span>
+        )}
       </div>
     </div>
   );
@@ -51,17 +53,17 @@ function Hero() {
   return (
     <section style={{ maxWidth: 1160, margin: "0 auto", padding: "48px 32px 0", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 22 }}>
       <h1 className="in" style={{ margin: 0, fontSize: "clamp(44px, 6.4vw, 82px)", fontWeight: 700, lineHeight: 1.02, letterSpacing: "-0.045em", maxWidth: 900 }}>
-        Big simulations, <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>small payments.</span>
+        Science compute you can <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>verify.</span>
       </h1>
-      <p className="in d1" style={{ margin: 0, fontSize: 20, lineHeight: 1.55, color: "var(--muted)", maxWidth: 580 }}>
-        Send your Monte Carlo job to idle GPUs around the world. Pay in BCH, only for results that check out.
+      <p className="in d1" style={{ margin: 0, fontSize: 20, lineHeight: 1.55, color: "var(--muted)", maxWidth: 660 }}>
+        Run Monte Carlo simulations on idle computers around the world. Every piece is computed twice, providers are paid in BCH only when the results match, and the proof goes on-chain.
       </p>
       <div className="in d2" style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 6 }}>
         <Link to="/connect?role=researcher" className="pri lift" style={{ padding: "16px 28px", borderRadius: 999, background: "var(--ink)", color: "#FFFFFF", textDecoration: "none", fontWeight: 600, fontSize: 16 }}>
           Run a simulation
         </Link>
         <Link to="/connect?role=provider" className="sec" style={{ padding: "15px 27px", borderRadius: 999, border: "1px solid var(--chip-border)", color: "var(--ink)", textDecoration: "none", fontWeight: 600, fontSize: 16 }}>
-          Earn with your GPU
+          Earn with your computer
         </Link>
       </div>
       <Link to="/lab" style={{ fontSize: 15, fontWeight: 600, color: "var(--green-ink)" }}>
@@ -159,16 +161,16 @@ function HeroIllustration() {
 }
 
 const STEPS = [
-  { bg: "#FFF6E3", title: "Fund your job", body: "Set the physics and a budget. Your BCH waits in an escrow contract, not with us.", art: <JarArt /> },
-  { bg: "#EEF0FF", title: "It runs everywhere", body: "Nova cuts the job into small pieces. Each piece goes to two browsers with idle GPUs.", art: <SplitArt /> },
-  { bg: "#E6F6EE", title: "Pay only for matches", body: "If both results agree, both providers get paid on the spot. If not, nobody does.", art: <ReceiptArt /> },
+  { bg: "#FFF6E3", title: "Fund your job", body: "Pick a simulation, set the physics and a budget. Your BCH waits in a CashScript escrow, not with us.", art: <JarArt /> },
+  { bg: "#EEF0FF", title: "Computed twice", body: "Nova cuts the job into pieces. Two independent machines compute each piece; our deterministic kernel makes honest results bit-identical.", art: <SplitArt /> },
+  { bg: "#E6F6EE", title: "Paid only for matches", body: "Matching results release a BCH payout to both providers on the spot. Mismatches get re-run, and nobody is paid for wrong work.", art: <ReceiptArt /> },
 ];
 
 function HowItWorks() {
   return (
     <section id="how" style={{ maxWidth: 1160, margin: "0 auto", padding: "112px 32px 32px" }}>
       <h2 style={{ margin: "0 0 56px", fontSize: 44, fontWeight: 700, letterSpacing: "-0.035em", textAlign: "center" }}>
-        Three steps. <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>No middleman.</span>
+        Three steps. <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>Verified at every one.</span>
       </h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 28 }}>
         {STEPS.map((s) => (
@@ -277,17 +279,60 @@ function LiveDemo() {
   );
 }
 
+const PROOFS = [
+  { title: "Neutron transport", what: "Particles through a wall · 4 pieces", txid: "82456f8d45c1d2269db6e2c37184872ef676f77c5f0bf0f9bfd1d7c0b3b37c9a" },
+  { title: "2D Ising model", what: "Magnet phase transition · 8 temperatures", txid: "96b9259581a7c3dffc81d788217ba882578bfa4dcc6904a78d6cd4003d6818cb" },
+  { title: "SIR epidemic", what: "800 simulated outbreaks · 4 pieces", txid: "a75e1044578c54c4ea3eee831067dbc2e747c081cc4a338453a3413983869bed" },
+];
+
+function Proof() {
+  return (
+    <section id="proof" style={{ maxWidth: 1160, margin: "0 auto", padding: "0 32px 96px" }}>
+      <h2 style={{ margin: "0 0 12px", fontSize: 44, fontWeight: 700, letterSpacing: "-0.035em", textAlign: "center" }}>
+        Proof, <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>not promises.</span>
+      </h2>
+      <p style={{ margin: "0 auto 36px", fontSize: 18, color: "var(--muted)", textAlign: "center", maxWidth: 620 }}>
+        Every finished job writes a Merkle root of all its results to Bitcoin Cash. Anyone can check it.
+      </p>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+        {PROOFS.map((p) => (
+          <li key={p.txid}>
+            <a
+              href={`https://chipnet.imaginary.cash/tx/${p.txid}`}
+              target="_blank"
+              rel="noreferrer"
+              className="card"
+              aria-label={`${p.title}: open its on-chain proof transaction (opens in a new tab)`}
+              style={{ display: "flex", flexDirection: "column", gap: 8, height: "100%", padding: "22px 24px", borderRadius: 24, background: "var(--surface)", color: "var(--ink)", textDecoration: "none" }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--green-ink)" }}>
+                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--green)" }} />
+                On chain · OP_RETURN
+              </span>
+              <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em" }}>{p.title}</span>
+              <span style={{ fontSize: 15, color: "var(--muted)" }}>{p.what}</span>
+              <span className="mono" style={{ marginTop: "auto", paddingTop: 6, fontSize: 13, color: "var(--muted)" }}>
+                {p.txid.slice(0, 10)}…{p.txid.slice(-6)} ↗
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function ProviderCta() {
   return (
     <section style={{ maxWidth: 1160, margin: "0 auto", padding: "32px 32px 112px" }}>
       <div style={{ borderRadius: 32, background: "var(--ink)", color: "#FFFFFF", padding: "64px 40px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 22 }}>
         <h2 style={{ margin: 0, fontSize: 44, fontWeight: 700, letterSpacing: "-0.035em", lineHeight: 1.1 }}>
-          Got a GPU doing nothing? <span style={{ fontStyle: "italic", color: "#3DDCA8" }}>Put it to work.</span>
+          Got a computer doing nothing? <span style={{ fontStyle: "italic", color: "#3DDCA8" }}>Put it to work.</span>
         </h2>
-        <p style={{ margin: 0, fontSize: 18, color: "#C9C9CF" }}>One click in your browser. Paid in BCH for every piece you finish.</p>
+        <p style={{ margin: 0, fontSize: 18, color: "#C9C9CF" }}>Open a browser tab and start earning. Paid in BCH for every verified piece. GPU workers coming next.</p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
           <Link to="/connect?role=provider" style={{ padding: "16px 28px", borderRadius: 999, background: "#FFFFFF", color: "var(--ink)", textDecoration: "none", fontWeight: 600, fontSize: 16 }}>
-            Earn with your GPU
+            Earn with your computer
           </Link>
           <Link to="/connect?role=researcher" style={{ padding: "15px 27px", borderRadius: 999, border: "1px solid #3A3A42", color: "#FFFFFF", textDecoration: "none", fontWeight: 600, fontSize: 16 }}>
             Run a simulation

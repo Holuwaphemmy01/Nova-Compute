@@ -38,7 +38,7 @@ export default function Jobs() {
           <Notice title="Couldn't load your jobs" tone="warn">{humanError(jobs.error)}</Notice>
         ) : list.length === 0 ? (
           <Notice title="No jobs yet" action={{ to: "/jobs/new", label: "Start a simulation" }}>
-            Set up a simulation, fund it from your wallet and watch it run on GPUs around the world.
+            Set up a simulation, fund it from your wallet and watch it run on computers around the world.
           </Notice>
         ) : null}
 

@@ -69,7 +69,7 @@ export default function Connect() {
             onChange={setRole}
             options={[
               { value: "researcher", label: "I have a simulation" },
-              { value: "provider", label: "I have a GPU" },
+              { value: "provider", label: "I have a computer" },
             ]}
           />
         </div>
@@ -83,7 +83,7 @@ export default function Connect() {
             <span className="mono" style={{ fontSize: 13, color: "var(--muted)", wordBreak: "break-all" }}>{wallet.address}</span>
             <NetworkBanner />
             <Link to={role === "researcher" ? "/jobs" : "/provider"} className="pri" style={{ ...btnPrimary, width: "100%", minHeight: 54, marginTop: 8, fontSize: 16 }}>
-              {role === "researcher" ? "Go to my jobs" : "Set up my GPU"}
+              {role === "researcher" ? "Go to my jobs" : "Set up my computer"}
             </Link>
             <button type="button" className="sec" onClick={disconnect} style={{ ...btnSecondary, minHeight: 46, padding: "0 20px", fontSize: 14 }}>
               Disconnect

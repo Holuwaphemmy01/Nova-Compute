@@ -100,7 +100,7 @@ class BrowserWorker {
     while (!signal.aborted) {
       const session = workerSession.get();
       if (!session) {
-        this.set({ status: "error", message: "Set up your GPU first." });
+        this.set({ status: "error", message: "Set up your computer first." });
         this.ctrl = null;
         return;
       }

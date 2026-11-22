@@ -19,7 +19,7 @@ const ROUTES: { path: string; title: string; element: ReactElement }[] = [
   { path: "/jobs/new", title: "New job", element: <NewJob /> },
   { path: "/jobs/:id", title: "Live job", element: <LiveJob /> },
   { path: "/jobs/:id/results", title: "Result", element: <Results /> },
-  { path: "/provider", title: "Set up your GPU", element: <ProviderSetup /> },
+  { path: "/provider", title: "Set up your computer", element: <ProviderSetup /> },
   { path: "/provider/earnings", title: "Earnings", element: <Earnings /> },
   { path: "/provider/machines", title: "Connect a GPU machine", element: <Machines /> },
 ];

@@ -51,7 +51,7 @@ export default function Earnings() {
       <AppHeader role="provider" />
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "32px 24px 80px", display: "flex", flexDirection: "column", gap: 24 }}>
         {!session ? (
-          <Notice title="You're not earning yet" action={{ to: "/provider", label: "Set up my GPU" }}>
+          <Notice title="You're not earning yet" action={{ to: "/provider", label: "Set up my computer" }}>
             Run the setup checks and start earning; your payouts will show up here.
           </Notice>
         ) : (

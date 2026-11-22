@@ -145,7 +145,7 @@ export default function ProviderSetup() {
         </div>
 
         <div className="in d1" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <h1 style={{ margin: 0, fontSize: 40, fontWeight: 700, letterSpacing: "-0.04em" }}>Put your GPU to work</h1>
+          <h1 style={{ margin: 0, fontSize: 40, fontWeight: 700, letterSpacing: "-0.04em" }}>Put your computer to work</h1>
           <p style={{ margin: 0, fontSize: 17, color: "var(--muted)" }}>Runs safely in this tab. Earn {fmt(1200)} sats for every piece you finish.</p>
         </div>
 
@@ -199,7 +199,7 @@ export default function ProviderSetup() {
         {error && <p role="alert" style={{ margin: 0, width: "100%", padding: "12px 16px", borderRadius: 14, background: "#FFF6E3", color: "#6B4700", fontSize: 14 }}>{error}</p>}
         <span style={{ fontSize: 13, color: "var(--faint)" }}>Close the tab any time to stop.</span>
         <NativeWorkerCard address={wallet.address} />
-        <Link to="/provider/machines" style={{ fontSize: 15, fontWeight: 600 }}>Have a gaming PC or rig? Connect a GPU machine →</Link>
+        <Link to="/provider/machines" style={{ fontSize: 15, fontWeight: 600 }}>Have a gaming PC or rig? GPU machines are coming (preview) →</Link>
       </main>
     </div>
   );

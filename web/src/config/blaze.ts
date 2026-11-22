@@ -1,8 +1,14 @@
-/** BCH BLAZE 2026 submission links, used by the frontend banner. */
+/** BCH BLAZE 2026 submission links, used by the landing-page banner. */
 export const BLAZE_LINKS = {
-  baselineCode: "https://github.com/Holuwaphemmy01/nova-compute/tree/blaze-start",
-  baselineDesigns: "https://github.com/Holuwaphemmy01/nova-compute/tree/blaze-start/design",
-  repo: "https://github.com/Holuwaphemmy01/nova-compute",
-  slides: "", // TODO: Widget Factory slides
-  emberAddress: "", // TODO: EMBER2026 CashTokens address
+  baselineCode: "https://github.com/Holuwaphemmy01/Nova-Compute/tree/blaze-start",
+  baselineDesigns: "https://github.com/Holuwaphemmy01/Nova-Compute/tree/blaze-start/design",
+  repo: "https://github.com/Holuwaphemmy01/Nova-Compute",
+  slides: "<SLIDES_LINK>",
+  emberAddress: "<EMBER_ADDRESS>",
 } as const;
+
+/** A banner value is shown only once it's filled in: not empty and not a <PLACEHOLDER>. */
+export function blazeValue(v: string): string | null {
+  const t = v.trim();
+  return t && !/^<[^>]*>$/.test(t) ? t : null;
+}
