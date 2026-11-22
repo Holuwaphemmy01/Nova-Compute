@@ -10,6 +10,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY kernel ./kernel
 COPY coordinator ./coordinator
+COPY worker ./worker
 COPY contracts/artifacts ./contracts/artifacts
 RUN cargo build --release --locked -p nova-coordinator --bin nova-coordinator \
  && strip target/release/nova-coordinator \
