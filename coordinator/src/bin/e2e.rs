@@ -5,6 +5,9 @@
 //!   cargo run -p nova-coordinator --bin e2e -- --template sir --chunks 4 --price 1200
 //!   cargo run -p nova-coordinator --bin e2e -- --chunks 2 --external 8080
 //!
+//! Mainnet: set NETWORK=mainnet (with mainnet ORACLE_WIF/FEE_WIF). Real BCH is spent, so the two
+//! in-process workers are paid to the fee and oracle addresses (keys you hold), never to throwaway keys.
+//!
 //! `--external <port>`: test harness for outside workers (browser tab, nova-worker). Instead of
 //! the 2 in-process workers it serves the normal HTTP API on that port (CORS open) from this same
 //! in-process coordinator and waits for external workers to complete the job.
@@ -38,7 +41,11 @@ fn arg(name: &str, default: u64) -> u64 {
 }
 
 fn link(net: Network, txid: &str) -> String {
-    format!("{txid}\n      {}", net.explorer_tx_url(txid))
+    let url = match net {
+        Network::Mainnet => format!("https://blockchair.com/bitcoin-cash/transaction/{txid}"),
+        Network::Chipnet => net.explorer_tx_url(txid),
+    };
+    format!("{txid}\n      {url}")
 }
 
 async fn run_worker(c: Arc<Coordinator>, w: Worker, job_id: String) -> u32 {
@@ -86,9 +93,8 @@ async fn main() {
         std::process::exit(2)
     });
     let net = cfg.settings.network;
-    if net != Network::Chipnet {
-        eprintln!("e2e only runs on chipnet");
-        std::process::exit(2);
+    if net == Network::Mainnet {
+        println!("network  MAINNET (real BCH)");
     }
     let fee = cfg.settings.fee.clone();
     let oracle_addr = cfg.settings.oracle.address(net);
@@ -148,9 +154,10 @@ async fn main() {
         println!("api      http://localhost:{port} — waiting for external workers");
         println!("payout addresses you control: {researcher_addr} (fee) · {oracle_addr} (oracle)");
     }
-    for _ in 0..if external.is_some() { 0 } else { 2 } {
-        let k = PrivateKey::random();
-        let s = c.create_worker(&k.address(net), "nova-kernel/0.1 native").await.unwrap();
+    for i in 0..if external.is_some() { 0 } else { 2 } {
+        // Mainnet: pay the workers to addresses whose keys we hold. Chipnet: throwaway keys.
+        let payout = if net == Network::Mainnet { [researcher_addr.clone(), oracle_addr.clone()][i].clone() } else { PrivateKey::random().address(net) };
+        let s = c.create_worker(&payout, "nova-kernel/0.1 native").await.unwrap();
         let w = c.auth_worker(&s.token).await.unwrap();
         println!("worker   {}", w.payout_addr);
         handles.push(tokio::spawn(run_worker(c.clone(), w, job.job_id.clone())));

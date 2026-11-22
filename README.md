@@ -12,7 +12,25 @@
 
 > The demo runs on Render's free plan: the first request after a quiet spell can take ~1 min while it wakes.
 
-## Proof on-chain (chipnet)
+## Proof on-chain
+
+### Mainnet
+
+A neutron-transport job (4 pieces, 1,200 sats per provider per piece) run end to end on
+**BCH mainnet** on Nov 22, 2026: funded into the NovaEscrow contract, every piece computed by two
+workers, hashes matched, 4 contract payouts, then the Merkle-root OP_RETURN.
+Result: 10.80 % transmitted ± 0.16 % over 40,000 particles.
+
+| Step | Transaction |
+|---|---|
+| Funding (4 × 3,000 sats → escrow) | [d3dcd403…2f14](https://blockchair.com/bitcoin-cash/transaction/d3dcd403d8f2bafa030fcafc41bbdfc0d78e4087d320b6e83ebc1583e6b12f14) |
+| Payout piece 0 | [671a6de6…7196](https://blockchair.com/bitcoin-cash/transaction/671a6de6d35be21d277f0d33fa8f12f9ac170903a667e019c5f998720ef67196) |
+| Payout piece 1 | [1f3b39a9…a50d](https://blockchair.com/bitcoin-cash/transaction/1f3b39a9f9eaef6a0af535586680179992c4b473afb0bd51a0cbc464b394a50d) |
+| Payout piece 2 | [5a04c578…9a7e](https://blockchair.com/bitcoin-cash/transaction/5a04c578b31e8c74d568d0f0a6c354f50b77328068e85f3e000d101764059a7e) |
+| Payout piece 3 | [294de87f…f205](https://blockchair.com/bitcoin-cash/transaction/294de87fa74db95b3bccd681b7f0c5342bb229439a12edc2ff664376e7d9f205) |
+| OP_RETURN root (Merkle `3b2c9efe…9d2d`) | [400a1fe8…c976](https://blockchair.com/bitcoin-cash/transaction/400a1fe85a502f63068b6ac9e33486c5db75cd0d01fbc54aee18eaf5d239c976) |
+
+### Chipnet
 
 Three real jobs, one per simulation template, run end to end by the coordinator on chipnet
 (Nov 20, 2026). Every payout spends its own escrow UTXO through the NovaEscrow contract; the
