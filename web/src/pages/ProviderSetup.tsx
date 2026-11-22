@@ -61,20 +61,20 @@ function useSetupChecks(walletAddress: string | null) {
   return { checks: [kernel, determinism, gpu, wallet], ready: deviceOk && !!walletAddress, deviceOk, deviceFailed, hash };
 }
 
-const NATIVE_DOWNLOAD = "https://github.com/Holuwaphemmy01/Nova-Compute/releases/download/nova-worker-v0.1/nova-worker.exe";
+const NATIVE_SOURCE = "https://github.com/Holuwaphemmy01/Nova-Compute#run-a-provider-node";
 const DEFAULT_COORDINATOR = "https://nova-coordinator.onrender.com";
 
 /** Optional: the native worker (same Rust kernel, same results) for people who'd rather not keep a tab open. */
 function NativeWorkerCard({ address }: { address: string | null }) {
   const [copied, setCopied] = useState(false);
   const coordinator = API_URL === DEFAULT_COORDINATOR ? "" : ` --coordinator ${API_URL}`;
-  const command = `nova-worker.exe${coordinator} --payout-addr ${address ?? "<your BCH address>"}`;
+  const command = `cargo run --release -p nova-worker --${coordinator} --payout-addr ${address ?? "<your BCH address>"}`;
   return (
     <section aria-labelledby="native-title" style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12, padding: 20, borderRadius: 20, background: "var(--surface)", textAlign: "left" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <h2 id="native-title" style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Run on your own machine</h2>
         <p style={{ margin: 0, fontSize: 14, color: "var(--muted)" }}>
-          Prefer not to keep a tab open? The Windows app runs the same kernel with the same results, and pays to the same address.
+          Prefer not to keep a tab open? The native worker runs the same Rust kernel with the same results, and pays to the same address. Run it from the repo (needs Rust):
         </p>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 12, background: "#FFFFFF", border: "1px solid var(--line)" }}>
@@ -83,7 +83,7 @@ function NativeWorkerCard({ address }: { address: string | null }) {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <a href={NATIVE_DOWNLOAD} style={{ fontSize: 14, fontWeight: 600 }}>Download nova-worker for Windows (.exe) →</a>
+      <a href={NATIVE_SOURCE} target="_blank" rel="noreferrer" style={{ fontSize: 14, fontWeight: 600 }}>Setup instructions on GitHub →</a>
     </section>
   );
 }
