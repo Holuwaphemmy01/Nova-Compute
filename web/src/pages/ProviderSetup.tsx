@@ -198,6 +198,9 @@ export default function ProviderSetup() {
         )}
         {error && <p role="alert" style={{ margin: 0, width: "100%", padding: "12px 16px", borderRadius: 14, background: "#FFF6E3", color: "#6B4700", fontSize: 14 }}>{error}</p>}
         <span style={{ fontSize: 13, color: "var(--faint)" }}>Close the tab any time to stop.</span>
+        <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
+          Tip: each piece needs 2 different workers. To test alone, open a second browser with another payout address.
+        </p>
         <NativeWorkerCard address={wallet.address} />
         <Link to="/provider/machines" style={{ fontSize: 15, fontWeight: 600 }}>Have a gaming PC or rig? GPU machines are coming (preview) →</Link>
       </main>

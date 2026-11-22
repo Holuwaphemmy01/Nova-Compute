@@ -22,7 +22,7 @@ export default function Landing() {
       <footer style={{ borderTop: "1px solid var(--line-soft)" }}>
         <div style={{ maxWidth: 1160, margin: "0 auto", padding: "28px 32px", display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", fontSize: 14, color: "var(--muted)" }}>
           <span>Nova · built on Bitcoin Cash</span>
-          <span>Live on {NETWORK} · WizardConnect · CashScript</span>
+          <span>Live on {NETWORK} · Mainnet-proven · CashScript</span>
         </div>
       </footer>
     </div>
@@ -56,7 +56,7 @@ function Hero() {
         Science compute you can <span style={{ fontStyle: "italic", color: "var(--green-ink)" }}>verify.</span>
       </h1>
       <p className="in d1" style={{ margin: 0, fontSize: 20, lineHeight: 1.55, color: "var(--muted)", maxWidth: 660 }}>
-        Run Monte Carlo simulations on idle computers around the world. Every piece is computed twice, providers are paid in BCH only when the results match, and the proof goes on-chain.
+        Run Monte Carlo simulations on idle computers around the world. Every piece is computed twice, providers are paid in BCH only when results match, and the proof goes on-chain.
       </p>
       <div className="in d2" style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 6 }}>
         <Link to="/connect?role=researcher" className="pri lift" style={{ padding: "16px 28px", borderRadius: 999, background: "var(--ink)", color: "#FFFFFF", textDecoration: "none", fontWeight: 600, fontSize: 16 }}>

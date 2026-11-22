@@ -3,8 +3,8 @@ export const BLAZE_LINKS = {
   baselineCode: "https://github.com/Holuwaphemmy01/Nova-Compute/tree/blaze-start",
   baselineDesigns: "https://github.com/Holuwaphemmy01/Nova-Compute/tree/blaze-start/design",
   repo: "https://github.com/Holuwaphemmy01/Nova-Compute",
-  slides: "https://docs.google.com/presentation/d/1RohvlVEY_oiTu-SfjnhdvDGlHyM-XXfOKp0-Gsi9VaA/edit?usp=drivesdk",
-  emberAddress: "<EMBER_ADDRESS>",
+  slides: "https://docs.google.com/presentation/d/1RohvlVEY_oiTu-SfjnhdvDGlHyM-XXfOKp0-Gsi9VaA",
+  emberAddress: "bitcoincash:zqy4ztcz33kq3720q2yu8sevaqkgl6x0guca5267l4",
 } as const;
 
 /** A banner value is shown only once it's filled in: not empty and not a <PLACEHOLDER>. */
